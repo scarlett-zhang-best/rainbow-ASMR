@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Rainbow ASMR Obby</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="game" aria-label="3D rainbow obby game"></canvas>
+  <div class="hud">
+    <div id="levelChip" class="level-chip"><span class="dot"></span><span id="levelName">Pink Prelude</span></div>
+    <div class="coin-bar">🪙 <span id="coinCount">0</span></div>
+  </div>
+  <div id="overlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <h2 id="overlayTitle">Level Complete!</h2>
+      <p id="overlayBody">You found every coin.</p>
+      <div id="overlayReward" class="overlay-reward" hidden></div>
+      <div class="overlay-actions">
+        <button id="overlayPlay" type="button">Keep playing</button>
+        <button id="overlayRestart" type="button">Restart level</button>
+      </div>
+    </div>
+  </div>
+  <div class="top-buttons">
+    <button id="wardrobeButton" aria-label="Open costume wardrobe">🧺</button>
+    <button id="soundButton" aria-label="Toggle sound" aria-pressed="true">🔊</button>
+  </div>
+  <aside id="wardrobe" class="wardrobe" aria-label="Costume wardrobe" hidden>
+    <div class="wardrobe-title">Choose a costume</div>
+    <div class="gender-toggle"><button id="girlMode" type="button">Girl</button><button id="boyMode" type="button">Boy</button></div>
+    <div class="wardrobe-columns">
+      <section><h2>All costumes</h2><div id="costumeList" class="costume-list"></div></section>
+    </div>
+  </aside>
+  <div id="stick" class="stick" aria-label="Movement joystick"><span></span></div>
+  <button id="jump" aria-label="Jump">JUMP</button>
+  <script src="three.min.js"></script>
+  <script src="cannon.min.js"></script>
+  <script src="levels.js"></script>
+  <script src="costumes.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

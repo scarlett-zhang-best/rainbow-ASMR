@@ -1,0 +1,55 @@
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%; margin: 0; overflow: hidden;
+  background: #92dcff; font-family: system-ui, sans-serif;
+  touch-action: none; user-select: none;
+}
+
+#game { display: block; width: 100%; height: 100%; }
+
+.top-buttons { position: fixed; top: 18px; right: 18px; z-index: 6; display: flex; gap: 10px; }
+#wardrobeButton, #soundButton { width: 54px; height: 54px; border: 3px solid #fff; border-radius: 16px; color: white; font-size: 1.7rem; cursor: pointer; }
+#wardrobeButton { background: #643d9ddd; box-shadow: 0 5px 14px #24134c66; }
+#soundButton { background: #2b8f7ddd; box-shadow: 0 5px 14px #12403c66; font-size: 1.6rem; }
+#soundButton[aria-pressed="false"] { background: #6b6b7acc; filter: grayscale(1); }
+.wardrobe { position: fixed; top: 82px; right: 18px; left: auto; z-index: 6; width: min(440px, calc(100vw - 36px)); padding: 14px; border: 3px solid #fff; border-radius: 18px; background: #30185fee; color: white; box-shadow: 0 10px 30px #1c103b99; }
+.wardrobe-title { margin-bottom: 8px; text-align: center; font-weight: 900; }
+.wardrobe-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wardrobe-columns section { grid-column: 1 / -1; }
+.gender-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 10px; }
+.gender-toggle button { border: 2px solid #ffffff66; border-radius: 10px; padding: 7px; background: #ffffff20; color: white; font-weight: 900; cursor: pointer; }
+.gender-toggle button.active { background: #ff79bd; border-color: white; }
+.wardrobe h2 { margin: 0 0 6px; text-align: center; font-size: .9rem; color: #ffd86b; }
+.costume-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.costume-list button { min-height: 58px; border: 2px solid #ffffff66; border-radius: 12px; background: #ffffff20; color: white; cursor: pointer; font-size: 1.65rem; }
+.costume-list button span { display: block; font-size: .62rem; font-weight: 800; }
+.costume-list button:hover, .costume-list button:focus { border-color: #ffd86b; background: #ffffff40; }
+
+.hud { position: fixed; top: 18px; left: 18px; pointer-events: none; color: white; text-shadow: 0 3px 0 #6c43a3, 0 5px 12px #304d8780; }
+.level-chip { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border: 3px solid #fff; border-radius: 999px; background: #643d9de6; font-weight: 900; font-size: 1rem; letter-spacing: -.01em; }
+.level-chip .dot { width: 15px; height: 15px; border-radius: 50%; background: #ff79bd; box-shadow: 0 0 10px #fff8; }
+.coin-bar { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; padding: 5px 14px; border: 3px solid #fff; border-radius: 999px; background: #2b8f7de6; font-weight: 900; font-size: .95rem; }
+
+.overlay { position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; background: #2a114aaa; backdrop-filter: blur(3px); }
+/* display:grid above would beat the browser's default [hidden] rule, so hide it explicitly */
+.overlay[hidden] { display: none; }
+.overlay-card { width: min(420px, calc(100vw - 36px)); padding: 22px; text-align: center; border: 4px solid #fff; border-radius: 24px; background: #30185fee; color: #fff; box-shadow: 0 16px 40px #150a2acc; }
+.overlay-card h2 { margin: 0 0 6px; font-size: 1.6rem; letter-spacing: -.02em; }
+.overlay-card p { margin: 0 0 12px; font-weight: 700; opacity: .9; }
+.overlay-reward { margin-bottom: 14px; padding: 12px; border-radius: 16px; background: #ffffff1f; border: 2px dashed #ffd86b; font-weight: 900; }
+.overlay-reward .emoji { font-size: 2rem; }
+.overlay-actions { display: flex; gap: 9px; justify-content: center; }
+.overlay-actions button { border: 3px solid #fff; border-radius: 14px; padding: 9px 16px; background: #ff79bd; color: #fff; font: 900 .95rem system-ui; cursor: pointer; }
+.overlay-actions button + button { background: #7b5bc4; }
+
+.stick, #jump { display: none; position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 2; }
+.stick { left: 26px; width: 112px; height: 112px; border: 4px solid #fff9; border-radius: 50%; background: #40277a44; box-shadow: 0 6px 20px #29215e55; }
+.stick span { position: absolute; width: 52px; height: 52px; left: 26px; top: 26px; border-radius: 50%; background: #fff; box-shadow: 0 3px 10px #382a6a99; }
+#jump { right: 26px; width: 94px; height: 94px; border: 5px solid #fff9; border-radius: 50%; color: white; background: #ff4f9b; font: 900 1rem system-ui; box-shadow: 0 7px 0 #a92c70, 0 10px 20px #29215e55; }
+#jump:active { transform: translateY(5px); box-shadow: 0 2px 0 #a92c70; }
+
+@media (pointer: coarse), (max-width: 700px) {
+  .stick, #jump { display: block; }
+  .level-chip { font-size: .85rem; padding: 5px 12px; }
+}
