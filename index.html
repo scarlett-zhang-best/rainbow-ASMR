@@ -45,6 +45,16 @@
   </aside>
   <div id="stick" class="stick" aria-label="Movement joystick"><span></span></div>
   <button id="jump" aria-label="Jump">JUMP</button>
+  <div id="cheatMenu" class="menu cheat-menu" hidden>
+    <div class="menu-title">🧪 Cheat menu</div>
+    <div id="cheatList" class="menu-list cheat-list"></div>
+    <div class="cheat-row">
+      <input id="cheatInput" class="cheat-input" type="text" placeholder="Enter code…" autocomplete="off" spellcheck="false" />
+      <button id="cheatSubmit" type="button" class="cheat-run">Run</button>
+      <button id="cheatClose" type="button" class="cheat-close">✕</button>
+    </div>
+    <div class="menu-hint">Codes: RESET · FLY · CLEAR · HELP · POWER · RICH / MIDAS</div>
+  </div>
   <script src="three.min.js"></script>
   <script src="cannon.min.js"></script>
   <script src="levels.js"></script>

@@ -716,7 +716,7 @@ function buildCharacter() {
 }
 
 // ===== Movement tuning (obby feel, in the spirit of Poki's Rainbow Obby) =====
-const GRAVITY = 22;          // gravity
+let GRAVITY = 22;          // gravity (let so cheats can lower it)
 const JUMP_POWER = 10.5;     // jump impulse
 const COYOTE = .11;          // grace period to jump after walking off a ledge
 const JUMP_BUFFER = .13;     // pressing jump slightly early still counts
@@ -730,7 +730,7 @@ const DEATH_Y = -12;         // fall below this and you respawn
 
 const player = { x: 0, y: 2.2, z: 7.6, vx: 0, vy: 0, vz: 0, r: .48, half: .55,
                  ground: false, surface: null, standingOn: null, airPeak: 0, steps: 0,
-                 prevY: 2.2, coyote: 0, jumpBuffer: 0 };
+                 prevY: 2.2, coyote: 0, jumpBuffer: 0, fly: false };
 let playerCostume = window.costumes.girl[0];
 let playerGender = 'girl';
 buildCharacter();
@@ -1016,6 +1016,7 @@ document.querySelector('#useButton').addEventListener('pointerdown', e => { e.pr
 
 // ---- teleport menu: home, unlocked levels, and the shop ----
 const menuPanel = document.querySelector('#menu'), menuList = document.querySelector('#menuList');
+const menuTimes = [];   // timestamps of map-menu toggles, for the secret cheat trigger
 function teleportToSpot(spot) {
   if (!spot) return respawn();
   Object.assign(player, {
@@ -1072,7 +1073,82 @@ document.querySelector('#menuButton').addEventListener('click', () => {
   wardrobe.hidden = true;
   menuPanel.hidden = !opening;
   if (opening) buildMenu();
+  // secret cheat menu: open/close the map menu 3 times within 2 seconds
+  const now = performance.now();
+  menuTimes.push(now);
+  if (menuTimes.length > 3) menuTimes.shift();
+  if (menuTimes.length === 3 && now - menuTimes[0] < 2000) openCheatMenu();
 });
+// ---- secret cheat menu ----
+const cheatPanel = document.querySelector('#cheatMenu');
+let cheatOpen = false;
+const cheatListEl = document.querySelector('#cheatList');
+function openCheatMenu() { cheatOpen = true; cheatPanel.hidden = false; buildCheatList(); }
+function closeCheatMenu() { cheatOpen = false; cheatPanel.hidden = true; }
+function buildCheatList() {
+  cheatListEl.textContent = '';
+  const rows = [
+    ['RESET', 'Erase all player data — back to scratch (levels, outfits, coins, progress).'],
+    ['FLY', 'Toggle flight — jump in midair.'],
+    ['CLEAR', 'Reset the player to the default spawn state, no cheats.'],
+    ['HELP', 'List all cheat codes and what they do.'],
+    ['POWER', 'Lower gravity (moon gravity).'],
+    ['RICH', 'Give 99999 coins. (alias: MIDAS)'],
+  ];
+  for (const [code, desc] of rows) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cheat-code';
+    b.textContent = code + ' - ' + desc;
+    b.addEventListener('click', () => runCheat(code));
+    cheatListEl.appendChild(b);
+  }
+}
+function runCheat(code) {
+  code = (code || '').trim().toUpperCase();
+  if (!code) return;
+  if (code === 'HELP') { buildCheatList(); return; }
+  if (code === 'RESET') {
+    localStorage.removeItem(SAVE_KEY);
+    Object.assign(save, { coins: 0, maxLevel: 0, outfits: [], beaten: [], best: {} });
+    buildLevel(0);
+    closeCheatMenu();
+    showToast('Cheat: RESET — wiped to scratch.');
+  } else if (code === 'CLEAR') {
+    Object.assign(player, { x: 0, y: 2.2, z: 7.6, vx: 0, vy: 0, vz: 0, prevY: 2.2, ground: false, surface: null,
+      standingOn: null, airPeak: 0, steps: 0, coyote: 0, jumpBuffer: 0, fly: false });
+    GRAVITY = 22;
+    playerCostume = window.costumes.girl[0];
+    playerGender = 'girl';
+    buildCharacter();
+    closeCheatMenu();
+    showToast('Cheat: CLEAR — player reset to default.');
+  } else if (code === 'FLY') {
+    player.fly = !player.fly;
+    closeCheatMenu();
+    showToast(player.fly ? 'Cheat: FLY on.' : 'Cheat: FLY off.');
+  } else if (code === 'POWER') {
+    GRAVITY = 8;
+    closeCheatMenu();
+    showToast('Cheat: POWER — gravity lowered.');
+  } else if (code === 'RICH' || code === 'MIDAS') {
+    save.coins = 99999;
+    writeSave();
+    coinCountEl.textContent = `${save.coins} 🪙`;
+    closeCheatMenu();
+    showToast('Cheat: RICH/MIDAS — 99999 coins!');
+  }
+}
+const cheatCloseBtn = document.querySelector('#cheatClose');
+if (cheatCloseBtn) cheatCloseBtn.addEventListener('click', closeCheatMenu);
+const cheatSubmitBtn = document.querySelector('#cheatSubmit');
+if (cheatSubmitBtn) cheatSubmitBtn.addEventListener('click', () => {
+  const input = document.querySelector('#cheatInput');
+  if (input && input.value.trim()) runCheat(input.value);
+  if (input) input.value = '';
+});
+const cheatInputEl = document.querySelector('#cheatInput');
+if (cheatInputEl) cheatInputEl.addEventListener('keydown', e => { if (e.code === 'Enter') { e.preventDefault(); if (cheatSubmitBtn) cheatSubmitBtn.click(); } });
 
 // ---- HUD ----
 const levelNameEl = document.querySelector('#levelName'), levelDotEl = document.querySelector('#levelChip .dot');
@@ -1396,9 +1472,9 @@ function update(dt) {
     const accel = player.ground ? 44 : 16, drag = Math.exp(-(player.ground ? 9 : 2.4) * h);
     player.vx = (player.vx + ix * accel * h) * drag;
     player.vz = (player.vz + iz * accel * h) * drag;
-    if (player.jumpBuffer > 0 && (player.ground || player.coyote > 0)) {
+    if (player.jumpBuffer > 0 && (player.ground || player.fly || player.coyote > 0)) {
       player.jumpBuffer = 0; player.coyote = 0;
-      player.vy = JUMP_POWER; player.ground = false; player.airPeak = 0; player.surface = null;
+      player.vy = player.fly ? -JUMP_POWER * 1.25 : JUMP_POWER; player.ground = false; player.airPeak = 0; player.surface = null;
       if (player.standingOn && player.standingOn.squishy) releaseSquishy(player.standingOn);
       anim.stretch = Math.max(anim.stretch, .35); anim.stretchVel += 1.6;
       sfx.jump();
