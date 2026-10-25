@@ -49,7 +49,12 @@ function makeEnvTexture(top, mid, bottom) {
 })();
 
 // Convert a CSS-style sRGB colour to linear so pastel values don't render washed out.
-const srgb = (c) => new THREE.Color(...c).convertSRGBToLinear();
+// Accepts an [r,g,b] array, a THREE.Color, or a single grey number.
+const srgb = (c) => {
+  if (c instanceof THREE.Color) return c.convertSRGBToLinear();
+  const arr = Array.isArray(c) ? c : [c, c, c];
+  return new THREE.Color(arr[0], arr[1], arr[2]).convertSRGBToLinear();
+};
 const mat = (c) => new THREE.MeshStandardMaterial({ color: srgb(c), roughness: 0.8 });
 const boxGeo = new THREE.BoxGeometry(2, 2, 2);
 const sphereGeo = new THREE.SphereGeometry(1, 20, 14);
@@ -90,7 +95,7 @@ function squishMaterial(color, { roughness = .2, opacity = .85, clearcoat = .8, 
     color: srgb(color), roughness, metalness: 0,
     clearcoat, clearcoatRoughness: .18,
     transparent: opacity < 1, opacity,
-    emissive: new THREE.Color(...(Array.isArray(emissive) ? emissive : [emissive, emissive, emissive]).map(v => srgb(v))),
+    emissive: new THREE.Color(...((Array.isArray(emissive) ? emissive : [emissive, emissive, emissive])).map(v => Array.isArray(v) ? v[0] : v)).convertSRGBToLinear(),
     emissiveIntensity,
     envMapIntensity: 1.1,
   });
