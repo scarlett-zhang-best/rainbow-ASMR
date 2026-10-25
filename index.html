@@ -19,14 +19,23 @@
       <div id="overlayReward" class="overlay-reward" hidden></div>
       <div class="overlay-actions">
         <button id="overlayPlay" type="button">Keep playing</button>
+        <button id="overlayNext" type="button">Next level</button>
         <button id="overlayRestart" type="button">Restart level</button>
       </div>
     </div>
   </div>
+  <div class="shop-prompt" id="shopPrompt" hidden></div>
+  <button id="useButton" class="use-button" hidden aria-label="Use">USE</button>
   <div class="top-buttons">
+    <button id="menuButton" aria-label="Open teleport menu">🗺️</button>
     <button id="wardrobeButton" aria-label="Open costume wardrobe">🧺</button>
     <button id="soundButton" aria-label="Toggle sound" aria-pressed="true">🔊</button>
   </div>
+  <aside id="menu" class="menu" aria-label="Teleport menu" hidden>
+    <div class="menu-title">Teleport</div>
+    <div id="menuList" class="menu-list"></div>
+    <div class="menu-hint">Unlocked levels, the home area and the shop.</div>
+  </aside>
   <aside id="wardrobe" class="wardrobe" aria-label="Costume wardrobe" hidden>
     <div class="wardrobe-title">Choose a costume</div>
     <div class="gender-toggle"><button id="girlMode" type="button">Girl</button><button id="boyMode" type="button">Boy</button></div>

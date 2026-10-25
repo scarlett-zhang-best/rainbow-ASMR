@@ -11,13 +11,13 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x7cd1ff);
-scene.fog = new THREE.Fog(0x7cd1ff, 30, 90);
+scene.background = new THREE.Color(0x6ec6ee);
+scene.fog = new THREE.Fog(0x6ec6ee, 30, 90);
 
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
 
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x8a6fb8, 0.9));
-const sun = new THREE.DirectionalLight(0xfff2d8, 1.4);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xdccef2, .8));
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.05);
 sun.position.set(6, 14, 5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -25,7 +25,32 @@ sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
 sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
 scene.add(sun);
 
-const mat = (c) => new THREE.MeshStandardMaterial({ color: new THREE.Color(...c), roughness: 0.8 });
+// Soft painted environment so translucent platforms pick up real reflections / highlights
+function makeEnvTexture(top, mid, bottom) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0, top); grad.addColorStop(.5, mid); grad.addColorStop(1, bottom);
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 128);
+  const sun = g.createRadialGradient(196, 30, 2, 196, 30, 44);
+  sun.addColorStop(0, 'rgba(255,255,255,1)'); sun.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = sun; g.fillRect(0, 0, 256, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  return tex;
+}
+(function setupEnvironment() {
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    scene.environment = pmrem.fromEquirectangular(makeEnvTexture('#ffffff', '#fff2f8', '#e8d3f6')).texture;
+  } catch (e) { /* the env map is a bonus, not a requirement */ }
+})();
+
+// Convert a CSS-style sRGB colour to linear so pastel values don't render washed out.
+const srgb = (c) => new THREE.Color(...c).convertSRGBToLinear();
+const mat = (c) => new THREE.MeshStandardMaterial({ color: srgb(c), roughness: 0.8 });
 const boxGeo = new THREE.BoxGeometry(2, 2, 2);
 const sphereGeo = new THREE.SphereGeometry(1, 20, 14);
 const skirtGeo = new THREE.CylinderGeometry(0.55, 1, 2, 20, 1, true);
@@ -36,6 +61,39 @@ function mesh(geo, c, x, y, z, sx, sy, sz, parent = scene) {
   m.castShadow = true; m.receiveShadow = true;
   parent.add(m);
   return m;
+}
+
+// Rounded box: keeps real-world proportions with soft, round edges (no sharp corners anywhere).
+function roundedBox(w, h, d, r, seg = 4) {
+  r = Math.max(.001, Math.min(r, w / 2 - .001, h / 2 - .001, d / 2 - .001));
+  const geo = new THREE.BoxGeometry(1, 1, 1, seg, seg, seg);
+  const pos = geo.attributes.position, nrm = geo.attributes.normal;
+  const iw = w / 2 - r, ih = h / 2 - r, id = d / 2 - r;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(pos.getX(i) * w, pos.getY(i) * h, pos.getZ(i) * d);
+    const cx = Math.max(-iw, Math.min(iw, v.x));
+    const cy = Math.max(-ih, Math.min(ih, v.y));
+    const cz = Math.max(-id, Math.min(id, v.z));
+    v.sub(new THREE.Vector3(cx, cy, cz));
+    if (v.lengthSq() < 1e-9) v.set(0, 1, 0); else v.normalize();
+    pos.setXYZ(i, cx + v.x * r, cy + v.y * r, cz + v.z * r);
+    nrm.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true; nrm.needsUpdate = true;
+  geo.userData.perLevel = true;   // disposed when the level is torn down
+  return geo;
+}
+// Squishy plastic-gel material: slightly see-through with a glossy clearcoat highlight.
+function squishMaterial(color, { roughness = .2, opacity = .85, clearcoat = .8, emissive = 0, emissiveIntensity = 0 } = {}) {
+  return new THREE.MeshPhysicalMaterial({
+    color: srgb(color), roughness, metalness: 0,
+    clearcoat, clearcoatRoughness: .18,
+    transparent: opacity < 1, opacity,
+    emissive: new THREE.Color(...(Array.isArray(emissive) ? emissive : [emissive, emissive, emissive]).map(v => srgb(v))),
+    emissiveIntensity,
+    envMapIntensity: 1.1,
+  });
 }
 
 // ===== Procedural squishy sound effects (no audio assets needed) =====
@@ -298,18 +356,20 @@ const levelRoot = new THREE.Group();
 scene.add(levelRoot);
 const rainbow = [[1,.18,.32],[1,.52,.08],[1,.85,.05],[.18,.8,.3],[.05,.67,.92],[.35,.28,.92],[.72,.22,.9],[1,.16,.55]];
 const cloudGeo = new THREE.SphereGeometry(1, 14, 10);
-const coinGeo = new THREE.CylinderGeometry(.3, .3, .07, 18);
+const coinGeo = new THREE.CylinderGeometry(.48, .48, .13, 22);
 const coinMat = new THREE.MeshStandardMaterial({ color: 0xffd34d, roughness: .18, metalness: .85, emissive: 0x7a5a00, emissiveIntensity: .6 });
 const ringGeo = new THREE.TorusGeometry(.9, .09, 10, 28);
 let platforms = [], coins = [], blocks = [], goal = null, currentLevel = null;
+const levelBodies = [];   // static cannon bodies owned by the current level
 let levelCoins = 0, levelComplete = false;
 
 // ---- persistent progress ----
 const SAVE_KEY = 'rainbowObby.save.v1';
 const save = loadSave();
 function loadSave() {
-  try { return Object.assign({ coins: 0, maxLevel: 0, outfits: [], best: {} }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch (e) { return { coins: 0, maxLevel: 0, outfits: [], best: {} }; }
+  const base = { coins: 0, maxLevel: 0, outfits: [], beaten: [], best: {} };
+  try { return Object.assign(base, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
+  catch (e) { return base; }
 }
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* private mode */ } }
 function addOutfitButton(o) {
@@ -348,14 +408,23 @@ for (const w of [
   wall.position.set(w.x, 3, w.z);
   world.add(wall);
 }
-world.addContactMaterial(new CANNON.ContactMaterial(blockMaterial, groundMaterial, { friction: 0.7, restitution: 0.08 }));
-world.addContactMaterial(new CANNON.ContactMaterial(blockMaterial, blockMaterial, { friction: 0.6, restitution: 0.06 }));
+world.addContactMaterial(new CANNON.ContactMaterial(blockMaterial, groundMaterial, { friction: .9, restitution: .02, contactEquationStiffness: 1e8, contactEquationRelaxation: 3 }));
+world.addContactMaterial(new CANNON.ContactMaterial(blockMaterial, blockMaterial, { friction: .7, restitution: .04, contactEquationStiffness: 1e8, contactEquationRelaxation: 3 }));
+// stiffer default contacts stop boxes from slowly sinking into each other when stacked
+world.defaultContactMaterial.contactEquationStiffness = 1e8;
+world.defaultContactMaterial.contactEquationRelaxation = 3;
 
 // ---- level construction ----
 function disposeLevel() {
-  levelRoot.traverse(o => { if (o.isMesh && o.material && o.material !== coinMat) o.material.dispose(); });
+  levelRoot.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.geometry && o.geometry.userData.perLevel) o.geometry.dispose();
+    if (o.material && o.material !== coinMat) o.material.dispose();
+  });
   levelRoot.clear();
   for (const b of blocks) world.remove(b.body);
+  for (const b of levelBodies) world.remove(b);
+  levelBodies.length = 0;
   blocks = []; platforms = []; coins = []; goal = null;
 }
 function makePlatform(def) {
@@ -365,42 +434,68 @@ function makePlatform(def) {
   levelRoot.add(g);
   const p = { kind, x: def.x, y: def.y, z: def.z, w: def.w, h: def.h, d: def.d, group: g,
               sink: 0, sinkVel: 0, sinkMax: 0, k: 200, damp: 12, pressed: false, pressT: 0, stickyT: 0,
-              squishy: false, sound: kind, label: kind, topExtra: 0 };
+              squishy: false, sound: kind, label: kind, topExtra: 0, hitW: def.w, hitD: def.d, corner: 0 };
+  // shrink the standable footprint by the corner radius (called by each branch below)
+  const setCorner = (r) => {
+    p.corner = r;
+    p.hitW = Math.max(.5, p.w - r * 2);
+    p.hitD = Math.max(.5, p.d - r * 2);
+  };
   if (kind === 'keycap') {
-    const tint = new THREE.Color(...(def.c || [1, .6, .8]));
-    // the sculpted white top defines the standable surface, so collision uses it too
+    const tint = srgb(def.c || [1, .6, .8]);
+    // the sculpted top defines the standable surface, so collision uses it too
     const topExtra = p.h * .12;
     p.topExtra = topExtra;
     const peak = p.h / 2 + topExtra;          // walking surface
-    const body = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: tint, roughness: .35 }));
-    body.scale.set(p.w, p.h, p.d); g.add(body);
-    const top = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: tint.clone().multiplyScalar(1.12), roughness: .25 }));
-    top.scale.set(p.w * .82, p.h * .5, p.d * .82);
-    top.position.y = peak - p.h * .25; g.add(top);
+    const soft = squishMaterial(tint.toArray(), { roughness: .22, opacity: .88, clearcoat: .9 });
+    const bodyR = Math.min(p.h * .48, .34);
+    setCorner(bodyR);
+    const body = new THREE.Mesh(roundedBox(p.w, p.h, p.d, bodyR), soft);
+    g.add(body);
+    const top = new THREE.Mesh(roundedBox(p.w * .84, p.h * .55, p.d * .84, p.h * .3), soft);
+    top.position.y = peak - p.h * .275; g.add(top);
     // legend sits flush inside the top face (never above the walking surface)
     const legendH = p.h * .05;
-    const legend = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .4 }));
-    legend.scale.set(p.w * .3, legendH, p.d * .3);
+    const legend = new THREE.Mesh(roundedBox(p.w * .3, legendH, p.d * .3, legendH * .45),
+      squishMaterial([1, 1, 1], { roughness: .12, opacity: .95, clearcoat: 1 }));
     legend.position.y = peak - legendH * .5 - .004; g.add(legend);
+  } else if (kind === 'solid') {
+    // rigid platform (used for the block tower floor) — never deforms, never sinks
+    const deckMat = squishMaterial(def.c || [1, .95, .98], { roughness: .26, opacity: .92, clearcoat: .7 });
+    setCorner(.22);
+    const slab = new THREE.Mesh(roundedBox(p.w, p.h, p.d, .22), deckMat); g.add(slab);
+    const cap = new THREE.Mesh(roundedBox(p.w * .96, p.h * .2, p.d * .96, .08),
+      squishMaterial([1, 1, 1], { roughness: .18, opacity: .9, clearcoat: .9 }));
+    cap.position.y = p.h * .4; g.add(cap);   // stays below the walking surface
+    for (let i = -1; i <= 1; i++) {
+      const stripe = new THREE.Mesh(roundedBox(p.w * .04, p.h * .5, p.d * 1.001, .02),
+        squishMaterial([1, .85, .93], { roughness: .3, opacity: .85, clearcoat: .5 }));
+      stripe.position.set(i * p.w * .28, 0, 0); g.add(stripe);
+    }
   } else if (kind === 'goal') {
-    const tint = new THREE.Color(...(def.c || [1, .45, .72]));
-    const pad = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: .3, emissive: tint, emissiveIntensity: .35 }));
-    pad.scale.set(p.w, p.h, p.d); g.add(pad);
-    const ring = new THREE.Mesh(ringGeo, new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: .5, roughness: .25 }));
+    const tint = srgb(def.c || [1, .45, .72]);
+    const pad = new THREE.Mesh(roundedBox(p.w, p.h, p.d, .24),
+      squishMaterial([1, 1, 1], { roughness: .2, opacity: .9, clearcoat: .9, emissive: tint.toArray(), emissiveIntensity: .3 }));
+    setCorner(.24);
+    g.add(pad);
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshPhysicalMaterial({
+      color: tint, emissive: tint, emissiveIntensity: .5, roughness: .2, clearcoat: 1, envMapIntensity: 1.2 }));
     ring.position.y = p.h * .5 + 1.3; g.add(ring);
-    const star = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({ color: 0xfff2a8, emissive: 0xffcc44, emissiveIntensity: .6, roughness: .3 }));
+    const star = new THREE.Mesh(cloudGeo, new THREE.MeshPhysicalMaterial({
+      color: 0xfff2a8, emissive: 0xffcc44, emissiveIntensity: .6, roughness: .2, clearcoat: 1 }));
     star.scale.setScalar(.42); star.position.y = p.h * .5 + 1.3; g.add(star);
     goal = { x: def.x, y: def.y + p.h / 2, z: def.z, ring, star, hit: false };
   } else {
     const kd = window.squishyKinds[kind] || window.squishyKinds.gel;
     p.squishy = true; p.sinkMax = kd.sink; p.k = kd.k; p.damp = kd.damp; p.sound = kd.sound; p.label = kd.label;
-    const gelMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(...kd.color), roughness: kd.rough, metalness: 0,
-      emissive: new THREE.Color(...kd.color), emissiveIntensity: kd.glow,
-      transparent: kd.opacity < 1, opacity: kd.opacity,
+    const gelMat = squishMaterial(kd.color, {
+      roughness: kd.rough, opacity: kd.opacity, clearcoat: kd.rough < .5 ? 1 : .35,
+      emissive: kd.glow ? kd.color : [0, 0, 0], emissiveIntensity: kd.glow,
     });
-    const slab = new THREE.Mesh(boxGeo, gelMat);
-    slab.scale.set(p.w, p.h, p.d); g.add(slab);
+    const slabR = Math.min(p.h * .5, .3);
+    setCorner(slabR);
+    const slab = new THREE.Mesh(roundedBox(p.w, p.h, p.d, slabR), gelMat);
+    g.add(slab);
     // soft mound on top; its peak IS the standing height, so you never sink into it
     const mound = Math.min(kd.mound * Math.min(1, p.w / 3.2), p.h * .45 + .15);
     p.topExtra = mound;
@@ -413,9 +508,9 @@ function makePlatform(def) {
     }
     if (kind === 'gel' || kind === 'gummy') {  // glossy bubbles
       for (let i = 0; i < 3; i++) {
-        const bubble = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({
-          color: new THREE.Color(...kd.color).lerp(new THREE.Color(1, 1, 1), .45),
-          roughness: .05, transparent: true, opacity: .65 }));
+        const bubble = new THREE.Mesh(cloudGeo, new THREE.MeshPhysicalMaterial({
+          color: srgb(kd.color).lerp(srgb([1, 1, 1]), .5),
+          roughness: .04, clearcoat: 1, transparent: true, opacity: .55, envMapIntensity: 1.4 }));
         const a = i * 2.1, r = p.w * .26;
         bubble.scale.setScalar(i === 1 ? .17 : .1);
         bubble.position.set(Math.cos(a) * r, p.h * .48 + .05, Math.sin(a) * r);
@@ -429,10 +524,9 @@ function makePlatform(def) {
         nub.position.set(sx * p.w * .32, p.h * .16, sz * p.d * .32);
         g.add(nub);
       }
-    }
-    if (kind === 'knead') {  // finger dents pressed into the dough
+    }    if (kind === 'knead') {  // finger dents pressed into the dough
       for (let i = 0; i < 4; i++) {
-        const dent = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({ color: new THREE.Color(...kd.color).multiplyScalar(.9), roughness: 1 }));
+        const dent = new THREE.Mesh(cloudGeo, squishMaterial(srgb(kd.color).multiplyScalar(.92).toArray(), { roughness: 1, opacity: .9, clearcoat: .1 }));
         dent.scale.setScalar(.11);
         dent.position.set((Math.random() - .5) * p.w * .6, p.h * .5 - .01, (Math.random() - .5) * p.d * .6);
         g.add(dent);
@@ -449,14 +543,8 @@ const lean = new THREE.Group();
 const body = new THREE.Group();
 character.add(lean); lean.add(body);
 scene.add(character);
-const rig = { legs: [], arms: [], eyes: [], wings: null, head: null, hair: null, skirt: null };
 function group(parent, x, y, z) {
   const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g;
-}
-function part(geo, c, x, y, z, sx, sy, sz, parent) {
-  const m = mesh(geo, c, x, y, z, sx, sy, sz, parent || body);
-  if (geo === skirtGeo) m.material.side = THREE.DoubleSide;
-  return m;
 }
 function makeCoin(x, y, z) {
   const m = new THREE.Mesh(coinGeo, coinMat);
@@ -467,12 +555,14 @@ function makeCoin(x, y, z) {
   return c;
 }
 function buildTower(tower) {
-  // static base so the blocks have something to rest on (and a bouncy cloud floor for the player)
+  // The walkable deck is part of the level data (a wide `solid` platform). Here we only add the
+  // physics side: a thick static base aligned to that deck, plus low walls to contain the blocks.
   const base = new CANNON.Body({ mass: 0, material: groundMaterial });
-  base.addShape(new CANNON.Box(new CANNON.Vec3(tower.w / 2, .5, tower.d / 2)));
-  base.position.set(tower.x, tower.y - .5, tower.z);
+  base.addShape(new CANNON.Box(new CANNON.Vec3(tower.w / 2, 3, tower.d / 2)));
+  base.position.set(tower.x, tower.y - 3, tower.z);
   world.add(base);
-  platforms.push(makePlatform({ t: 'marsh', x: tower.x, y: tower.y - .5, z: tower.z, w: tower.w, h: 1, d: tower.d }));
+  levelBodies.push(base);
+  tower.floorY = tower.y;
   // low walls so smashed blocks stay on the playground
   for (const w of [
     { x: tower.x, z: tower.z - tower.d / 2, sx: tower.w, sz: .4 },
@@ -484,8 +574,10 @@ function buildTower(tower) {
     wall.addShape(new CANNON.Box(new CANNON.Vec3(w.sx / 2, 2, w.sz / 2)));
     wall.position.set(w.x, tower.y + 1.5, w.z);
     world.add(wall);
+    levelBodies.push(wall);
   }
   const rowColors = [0, 1, 2, 3, 5, 6, 7], s = .62;
+  blocks.floorY = tower.y;   // hard floor used as a safety net in updateBlocks()
   for (let y = 0; y < 7; y++) for (let x = 0; x < 7 - y; x++) {
     const c = rainbow[rowColors[y]];
     const b = { x: tower.x + (x - (3 - y) / 2) * 1.35, y: tower.y + s + y * 1.28, z: tower.z, s, c, vx: 0, vy: 0, vz: 0 };
@@ -493,8 +585,8 @@ function buildTower(tower) {
     b.body = new CANNON.Body({ mass: 1, material: blockMaterial });
     b.body.addShape(new CANNON.Box(new CANNON.Vec3(s, s, s)));
     b.body.position.set(b.x, b.y, b.z);
-    b.body.linearDamping = .25; b.body.angularDamping = .4;
-    b.body.allowSleep = true; b.body.sleepSpeedLimit = .35; b.body.sleepTimeLimit = .6;
+    b.body.linearDamping = .3; b.body.angularDamping = .5;
+    b.body.allowSleep = true; b.body.sleepSpeedLimit = .6; b.body.sleepTimeLimit = .8;
     b.body.addEventListener('collide', e => {
       const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
       if (v > 1.4) sfx.thud(v, Math.max(-1, Math.min(1, (b.body.position.x - tower.x) / (tower.w / 2))));
@@ -505,22 +597,28 @@ function buildTower(tower) {
 }
 function buildLevel(index) {
   disposeLevel();
+  shopState.active = false;
   const def = window.levels[index];
   currentLevel = { def, index };
   levelComplete = false; levelCoins = 0;
-  scene.background = new THREE.Color(...(def.sky || [.78, .9, 1]));
-  scene.fog.color.set(...(def.sky || [.78, .9, 1]));
+  scene.background = new THREE.Color(...(def.sky || [.78, .9, 1])).convertSRGBToLinear();
+  scene.fog.color.set(...(def.sky || [.78, .9, 1])).convertSRGBToLinear();
   scene.fog.near = 18; scene.fog.far = 95;
   for (const d of [...def.platforms, ...(def.bonus || [])]) platforms.push(makePlatform(d));
   if (def.tower) buildTower(def.tower);
-  for (const p of platforms) { if (p.kind !== 'goal') makeCoin(p.x, p.y + p.h / 2 + 1.35, p.z); }
-  (def.extraCoins || []).forEach(c => makeCoin(c[0], c[1], c[2]));
-  // puffy clouds drifting far away for depth
-  for (let i = 0; i < 16; i++) {
-    const puff = new THREE.Mesh(cloudGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: .85 }));
-    const spread = 30 + Math.random() * 40;
-    puff.position.set((Math.random() - .5) * spread, -6 + Math.random() * 16, -10 - Math.random() * 60);
-    puff.scale.set(4 + Math.random() * 6, 1.6 + Math.random() * 1.6, 3 + Math.random() * 4);
+  // exactly one coin per squishy, floating just above its surface
+  for (const p of platforms) if (p.squishy) makeCoin(p.x, platformTop(p) + 1.35, p.z);
+  // puffy clouds far below and to the sides — soft white, never blocking the course
+  const cloudMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 1, metalness: 0,
+    emissive: 0xffffff, emissiveIntensity: .3, envMapIntensity: .1,
+    transparent: true, opacity: .5,
+  });
+  for (let i = 0; i < 14; i++) {
+    const puff = new THREE.Mesh(cloudGeo, cloudMat);
+    const side = Math.random() < .5 ? -1 : 1;
+    puff.position.set(side * (16 + Math.random() * 34), -16 + Math.random() * 12, -8 - Math.random() * 60);
+    puff.scale.set(5 + Math.random() * 7, 1.8 + Math.random() * 1.8, 4 + Math.random() * 5);
     levelRoot.add(puff);
   }
   Object.assign(player, { x: def.spawn.x, y: def.spawn.y, z: def.spawn.z, vx: 0, vy: 0, vz: 0, prevY: def.spawn.y,
@@ -529,34 +627,41 @@ function buildLevel(index) {
   updateHud();
 }
 
-function buildCharacter() {
-  // drop the old costume (disposing its materials) and rebuild the rig
-  body.traverse(o => { if (o.isMesh && o.material) o.material.dispose(); });
-  body.clear();
-  rig.legs = []; rig.arms = []; rig.eyes = []; rig.wings = null;
-  const C = playerCostume;
+function disposeRig(parent) {
+  parent.traverse(o => { if (o.isMesh && o.material) o.material.dispose(); });
+  parent.clear();
+}
+// Builds a full character rig under `parent`. Used for the player AND for the shop mannequins,
+// so what you see in a display tube is exactly what you wear.
+function constructRig(parent, C, gender) {
+  const r = { legs: [], arms: [], eyes: [], wings: null, head: null, hair: null, skirt: null };
+  const part = (geo, c, x, y, z, sx, sy, sz, owner) => {
+    const m = mesh(geo, c, x, y, z, sx, sy, sz, owner || parent);
+    if (geo === skirtGeo) m.material.side = THREE.DoubleSide;
+    return m;
+  };
   const purple = C.dress, deep = C.accent, skin = [1,.74,.66], white = [1,.96,1], dark = [.12,.06,.22];
   const blonde = C.hair, blondeLight = C.hair.map(v => Math.min(1, v + .18));
-  const isCloud = C.id === 'cloud', isBoy = playerGender === 'boy', pants = isBoy, shortHair = isBoy;
+  const isCloud = C.id === 'cloud', isBoy = gender === 'boy', pants = isBoy, shortHair = isBoy;
 
   // legs, pivoting at the hip (y = .78)
   for (const side of [-1, 1]) {
-    const leg = group(body, side * .16, .78, 0);
+    const leg = group(parent, side * .16, .78, 0);
     part(sphereGeo, pants ? purple : white, 0, -.42, 0, .12, .35, .12, leg);
     part(sphereGeo, deep, 0, -.69, .08, .19, .09, .28, leg);
     part(sphereGeo, deep, 0, -.655, -.10, .075, .12, .075, leg);   // heel tip sits exactly at y = 0
     if (pants) part(sphereGeo, purple, 0, -.06, 0, .17, .22, .17, leg);
-    rig.legs.push(leg);
+    r.legs.push(leg);
   }
   // bell skirt (or nothing for the boy outfits)
-  rig.skirt = group(body, 0, .84, 0);
+  r.skirt = group(parent, 0, .84, 0);
   if (!pants) {
-    part(skirtGeo, white, 0, -.06, 0, .45, .30, .38, rig.skirt);
-    part(skirtGeo, purple, 0, 0, 0, .41, .32, .35, rig.skirt);
+    part(skirtGeo, white, 0, -.06, 0, .45, .30, .38, r.skirt);
+    part(skirtGeo, purple, 0, 0, 0, .41, .32, .35, r.skirt);
   }
   // cloud wings
-  if (isCloud) rig.wings = [-1, 1].map(side => {
-    const w = group(body, side * .38, 1.32, -.24);
+  if (isCloud) r.wings = [-1, 1].map(side => {
+    const w = group(parent, side * .38, 1.32, -.24);
     part(sphereGeo, white, 0, 0, 0, .16, .38, .07, w);
     return w;
   });
@@ -566,37 +671,42 @@ function buildCharacter() {
   part(sphereGeo, deep, 0, 1.03, .31, .10, .10, .06);
   // arms, pivoting at the shoulder (y = 1.22)
   for (const side of [-1, 1]) {
-    const arm = group(body, side * .36, 1.22, 0);
+    const arm = group(parent, side * .36, 1.22, 0);
     part(sphereGeo, purple, 0, 0, 0, .17, .19, .17, arm);
     part(sphereGeo, skin, 0, -.23, 0, .09, .25, .09, arm);
     part(sphereGeo, skin, 0, -.44, 0, .12, .12, .12, arm);
-    rig.arms.push(arm);
+    r.arms.push(arm);
   }
   // head, pivoting at the neck (y = 1.32)
-  rig.head = group(body, 0, 1.32, 0);
-  const head = rig.head;
-  part(sphereGeo, blonde, 0, .37, -.035, .37, .37, .35, head);
-  part(sphereGeo, skin, 0, .35, .075, .31, .31, .30, head);
-  part(sphereGeo, blondeLight, 0, .59, .13, .28, .12, .23, head);
-  part(sphereGeo, blondeLight, -.25, .48, .19, .13, .25, .12, head);
-  part(sphereGeo, blondeLight,  .25, .48, .19, .13, .25, .12, head);
+  r.head = group(parent, 0, 1.32, 0);
+  part(sphereGeo, blonde, 0, .37, -.035, .37, .37, .35, r.head);
+  part(sphereGeo, skin, 0, .35, .075, .31, .31, .30, r.head);
+  part(sphereGeo, blondeLight, 0, .59, .13, .28, .12, .23, r.head);
+  part(sphereGeo, blondeLight, -.25, .48, .19, .13, .25, .12, r.head);
+  part(sphereGeo, blondeLight,  .25, .48, .19, .13, .25, .12, r.head);
   for (const side of [-1, 1]) {
-    const eye = part(sphereGeo, dark, side * .105, .40, .36, .035, .055, .025, head);
-    eye.userData.sy = .055; rig.eyes.push(eye);
+    const eye = part(sphereGeo, dark, side * .105, .40, .36, .035, .055, .025, r.head);
+    eye.userData.sy = .055; r.eyes.push(eye);
   }
-  part(sphereGeo, [.8,.16,.35], 0, .28, .365, .055, .025, .022, head);
+  part(sphereGeo, [.8,.16,.35], 0, .28, .365, .055, .025, .022, r.head);
   // long curls, pivoting higher up so they swing with a delay
-  rig.hair = group(body, 0, 1.48, 0);
+  r.hair = group(parent, 0, 1.48, 0);
   if (!shortHair) {
-    part(sphereGeo, blonde, -.35, 0, -.01, .13, .29, .14, rig.hair);
-    part(sphereGeo, blonde,  .35, 0, -.01, .13, .29, .14, rig.hair);
-    part(sphereGeo, blondeLight, -.30, -.28, -.02, .14, .25, .14, rig.hair);
-    part(sphereGeo, blondeLight,  .30, -.28, -.02, .14, .25, .14, rig.hair);
-    part(sphereGeo, blonde, -.37, -.50, 0, .13, .20, .13, rig.hair);
-    part(sphereGeo, blonde,  .37, -.50, 0, .13, .20, .13, rig.hair);
-    part(sphereGeo, blondeLight, -.31, -.65, .01, .11, .14, .11, rig.hair);
-    part(sphereGeo, blondeLight,  .31, -.65, .01, .11, .14, .11, rig.hair);
+    part(sphereGeo, blonde, -.35, 0, -.01, .13, .29, .14, r.hair);
+    part(sphereGeo, blonde,  .35, 0, -.01, .13, .29, .14, r.hair);
+    part(sphereGeo, blondeLight, -.30, -.28, -.02, .14, .25, .14, r.hair);
+    part(sphereGeo, blondeLight,  .30, -.28, -.02, .14, .25, .14, r.hair);
+    part(sphereGeo, blonde, -.37, -.50, 0, .13, .20, .13, r.hair);
+    part(sphereGeo, blonde,  .37, -.50, 0, .13, .20, .13, r.hair);
+    part(sphereGeo, blondeLight, -.31, -.65, .01, .11, .14, .11, r.hair);
+    part(sphereGeo, blondeLight,  .31, -.65, .01, .11, .14, .11, r.hair);
   }
+  return r;
+}
+let rig = null;
+function buildCharacter() {
+  disposeRig(body);            // drop the old costume (disposing its materials)
+  rig = constructRig(body, playerCostume, playerGender);
 }
 
 // ===== Movement tuning (obby feel, in the spirit of Poki's Rainbow Obby) =====
@@ -604,10 +714,12 @@ const GRAVITY = 22;          // gravity
 const JUMP_POWER = 10.5;     // jump impulse
 const COYOTE = .11;          // grace period to jump after walking off a ledge
 const JUMP_BUFFER = .13;     // pressing jump slightly early still counts
-const EDGE_GRACE = .3;       // landing footprint is wider than the side box (forgiving edges)
+const EDGE_GRACE = 0;        // no extra forgiveness: the hitbox must match the rounded top face
+const LAND_PAD = .32;       // how far the body's centre may sit past the visible top edge
 const SNAP_DROP = .5;        // snap down small steps instead of falling through
 const LAND_GRACE = .12;      // vertical tolerance above a surface that still counts as standing
-const LAND_BAND = .6;        // how far below a surface still counts as a landing (before side push)
+const LAND_BAND = .25;       // reduced step height: how far below a surface still counts as landing
+const STICK = .3;            // feet stay glued while you shuffle toward the next platform
 const DEATH_Y = -12;         // fall below this and you respawn
 
 const player = { x: 0, y: 2.2, z: 7.6, vx: 0, vy: 0, vz: 0, r: .48, half: .55,
@@ -646,7 +758,7 @@ stick.addEventListener('pointerup', () => { touch.x = touch.y = 0; knob.style.tr
 document.querySelector('#jump').addEventListener('pointerdown', e => { jumpQueued = true; e.preventDefault(); });
 
 const wardrobe = document.querySelector('#wardrobe');
-document.querySelector('#wardrobeButton').addEventListener('click', () => { wardrobe.hidden = !wardrobe.hidden; });
+document.querySelector('#wardrobeButton').addEventListener('click', () => { wardrobe.hidden = !wardrobe.hidden; if (!wardrobe.hidden) menuPanel.hidden = true; });
 const soundButton = document.querySelector('#soundButton');
 soundButton.addEventListener('click', () => {
   const on = soundButton.getAttribute('aria-pressed') !== 'true';
@@ -668,37 +780,348 @@ allCostumes.forEach(costume => {
   costumeList.appendChild(button);
 });
 
+// ======================= SHOP =======================
+// A row of display tubes, each holding a mannequin in an outfit. Stand on the pad in front of a
+// tube and press E / Space to buy it (increasing price) or wear it if you already own it.
+const shopState = { active: false, stations: [], leave: null, promptEl: null };
+const _v3 = new THREE.Vector3();
+const allShopOutfits = [
+  ...window.costumes.girl.map(o => ({ ...o, gender: 'girl' })),
+  ...window.costumes.boy.map(o => ({ ...o, gender: 'boy' })),
+  ...window.rainbowOutfits.map(o => ({ ...o, gender: 'girl' })),
+];
+function ownsOutfit(id) { return id === window.STARTER_OUTFIT || save.outfits.includes(id); }
+function labelTexture(lines, bg = 'rgba(36,20,88,0.92)') {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = bg;
+  const r = 40;
+  g.beginPath();
+  g.moveTo(r, 0); g.arcTo(c.width, 0, c.width, c.height, r); g.arcTo(c.width, c.height, 0, c.height, r);
+  g.arcTo(0, c.height, 0, 0, r); g.arcTo(0, 0, c.width, 0, r); g.closePath(); g.fill();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach((line, i) => {
+    g.font = line.big ? 'bold 62px system-ui, sans-serif' : 'bold 42px system-ui, sans-serif';
+    g.fillStyle = line.color || '#ffffff';
+    g.fillText(line.text, c.width / 2, 84 + i * 74);
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  return { tex, ctx: g, canvas: c };
+}
+function stationSign(outfit, price) {
+  const owned = ownsOutfit(outfit.id);
+  const starter = outfit.id === window.STARTER_OUTFIT;
+  const lines = [
+    { text: `${outfit.emoji} ${outfit.name}`, big: true },
+    { text: owned ? (starter ? 'STARTER · FREE' : 'OWNED ✓') : `${price} 🪙`, color: owned ? '#9dffc4' : '#ffd86b' },
+  ];
+  const { tex, ctx, canvas } = labelTexture(lines);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const geo = new THREE.PlaneGeometry(2.4, 1.2);
+  geo.userData.perLevel = true;
+  const sign = new THREE.Mesh(geo, mat);
+  sign.position.set(0, 3.1, .42);
+  return { sign, tex, ctx, canvas };
+}
+function refreshStationSigns() {
+  for (const s of shopState.stations) {
+    const owned = ownsOutfit(s.outfit.id);
+    const starter = s.outfit.id === window.STARTER_OUTFIT;
+    const c = s.sign.canvas, g = s.sign.ctx;
+    g.clearRect(0, 0, c.width, c.height);
+    g.fillStyle = 'rgba(36,20,88,0.92)';
+    g.beginPath();
+    g.moveTo(40, 0); g.arcTo(c.width, 0, c.width, c.height, 40); g.arcTo(c.width, c.height, 0, c.height, 40);
+    g.arcTo(0, c.height, 0, 0, 40); g.arcTo(0, 0, c.width, 0, 40); g.closePath(); g.fill();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 62px system-ui, sans-serif'; g.fillStyle = '#ffffff';
+    g.fillText(`${s.outfit.emoji} ${s.outfit.name}`, c.width / 2, 84);
+    g.font = 'bold 42px system-ui, sans-serif';
+    g.fillStyle = owned ? '#9dffc4' : '#ffd86b';
+    g.fillText(owned ? (starter ? 'STARTER · FREE' : 'OWNED ✓') : `${s.price} 🪙`, c.width / 2, 158);
+    s.sign.tex.needsUpdate = true;
+    // pad glow: green when owned, gold when buyable, dim when too expensive
+    const price = s.price;
+    const buyable = price === 0 || save.coins >= price;
+    s.pad.material.color.setHex(owned ? 0x49d18a : buyable ? 0xffd86b : 0x8a8a9a);
+  }
+}
+function buildShop() {
+  disposeLevel();
+  shopState.active = true;
+  currentLevel = null;
+  levelComplete = false;
+  scene.background = new THREE.Color(.36, .22, .55);
+  scene.fog.color.set(.36, .22, .55);
+  scene.fog.near = 26; scene.fog.far = 70;
+  // room: floor, walls and a ceiling so the shop feels enclosed
+  platforms.push(makePlatform({ t: 'solid', x: 0, y: -.5, z: 0, w: 26, h: 1, d: 40, c: [.42, .3, .62] }));
+  platforms.push(makePlatform({ t: 'solid', x: 0, y: 5.5, z: 0, w: 26, h: .8, d: 40, c: [.3, .2, .48] }));
+  for (const w of [
+    { x: -13, z: 0, w: 1, d: 40 }, { x: 13, z: 0, w: 1, d: 40 },
+    { x: 0, z: -20, w: 26, d: 1 }, { x: 0, z: 19, w: 26, d: 1 },
+  ]) platforms.push(makePlatform({ t: 'solid', x: w.x, y: 2.6, z: w.z, w: w.w, h: 6.2, d: w.d, c: [.34, .24, .55] }));
+
+  const tubeGeo = new THREE.CylinderGeometry(.95, .95, 3.2, 20, 1, true);
+  tubeGeo.userData.perLevel = true;
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xdff3ff, roughness: .05, metalness: 0, transmission: 0, transparent: true,
+    opacity: .22, side: THREE.DoubleSide, envMapIntensity: 1.6, clearcoat: 1,
+  });
+  const perRow = 7;
+  allShopOutfits.forEach((outfit, i) => {
+    const col = i % perRow, row = Math.floor(i / perRow);
+    const x = (col - (perRow - 1) / 2) * 3.4;
+    const z = -6 - row * 6;
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    levelRoot.add(g);
+    // plinth + glass tube
+    const plinth = new THREE.Mesh(roundedBox(2.2, .5, 2.2, .12), squishMaterial([.5, .38, .74], { roughness: .3, opacity: .95, clearcoat: .7 }));
+    plinth.position.y = .25; g.add(plinth);
+    const tube = new THREE.Mesh(tubeGeo, glassMat);
+    tube.position.y = 2.1; g.add(tube);
+    const capGeo = new THREE.CylinderGeometry(1.05, 1.05, .22, 20);
+    capGeo.userData.perLevel = true;
+    const cap = new THREE.Mesh(capGeo, squishMaterial([.62, .5, .9], { roughness: .25, opacity: .95, clearcoat: .8 }));
+    cap.position.y = 3.8; g.add(cap);
+    // mannequin wearing the outfit
+    const man = new THREE.Group();
+    man.position.y = .5;
+    g.add(man);
+    constructRig(man, outfit, outfit.gender);
+    man.rotation.y = Math.PI;   // face the shopper
+    // the purchase pad in front of the tube
+    const padGeo = roundedBox(1.5, .12, 1.5, .05);
+    const pad = new THREE.Mesh(padGeo, squishMaterial([1, .86, .3], { roughness: .3, opacity: .95, clearcoat: .8, emissive: [.4, .3, 0], emissiveIntensity: .8 }));
+    pad.position.set(0, .06, 2.1); g.add(pad);
+    const sign = stationSign(outfit, window.shopPrice(i));
+    g.add(sign.sign);
+    shopState.stations.push({ outfit, price: window.shopPrice(i), group: g, mannequin: man, pad, sign: sign });
+  });
+  // exit pad
+  const exitGroup = new THREE.Group();
+  exitGroup.position.set(0, 0, 15);
+  levelRoot.add(exitGroup);
+  const exitPad = new THREE.Mesh(roundedBox(3.2, .14, 3.2, .06), squishMaterial([.55, .9, .75], { roughness: .3, opacity: .95, clearcoat: .8, emissive: [0, .25, .18], emissiveIntensity: .7 }));
+  exitPad.position.y = .07; exitGroup.add(exitPad);
+  const exitSign = labelTexture([{ text: '🚪 Leave shop', big: true }], 'rgba(20,60,45,0.92)');
+  const exitGeo = new THREE.PlaneGeometry(2.6, 1.3);
+  exitGeo.userData.perLevel = true;
+  const exitLabel = new THREE.Mesh(exitGeo, new THREE.MeshBasicMaterial({ map: exitSign.tex, transparent: true, depthWrite: false }));
+  exitLabel.position.set(0, 2.4, 0); exitGroup.add(exitLabel);
+  shopState.leave = { group: exitGroup, pad: exitPad };
+
+  Object.assign(player, { x: 0, y: 2, z: 10, vx: 0, vy: 0, vz: 0, prevY: 2, ground: false,
+                           airPeak: 0, steps: 0, surface: null, standingOn: null, coyote: 0, jumpBuffer: 0 });
+  cameraYaw = 0;
+  refreshStationSigns();
+  levelNameEl.textContent = '🛒 Outfit Shop';
+  levelDotEl.style.background = 'linear-gradient(135deg,#ffd86b,#ff79bd)';
+  coinCountEl.textContent = `${save.coins} 🪙`;
+}
+function leaveShop() {
+  shopState.active = false;
+  const target = Math.min(save.maxLevel, window.levels.length - 1);
+  buildLevel(target);
+  showToast('Back in the world.');
+}
+function nearestStation() {
+  let best = null, bestD = 2.6;
+  for (const s of shopState.stations) {
+    const dx = player.x - s.group.position.x, dz = player.z - (s.group.position.z + 2.1);
+    const d = Math.hypot(dx, dz);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
+}
+function shopInteract() {
+  if (!shopState.active) return false;
+  // leaving first if standing on the exit pad
+  if (shopState.leave) {
+    const dx = player.x - shopState.leave.group.position.x, dz = player.z - shopState.leave.group.position.z;
+    if (Math.hypot(dx, dz) < 2.2) { leaveShop(); return true; }
+  }
+  const s = nearestStation();
+  if (!s) return false;
+  const id = s.outfit.id;
+  if (ownsOutfit(id)) {
+    playerCostume = s.outfit; playerGender = s.outfit.gender; buildCharacter();
+    sfx.jump(); showToast(`Wearing ${s.outfit.emoji} ${s.outfit.name}`);
+  } else if (save.coins >= s.price) {
+    save.coins -= s.price;
+    addOutfitToWardrobe(s.outfit);
+    playerCostume = s.outfit; playerGender = s.outfit.gender; buildCharacter();
+    sfx.coin(); setTimeout(() => sfx.coin(), 130);
+    showToast(`Bought ${s.outfit.emoji} ${s.outfit.name} for ${s.price} 🪙`);
+    writeSave();
+  } else {
+    sfx.unstick('knead', .6);
+    showToast(`You need ${s.price - save.coins} more coins for ${s.outfit.name}.`);
+  }
+  refreshStationSigns();
+  coinCountEl.textContent = `${save.coins} 🪙`;
+  return true;
+}
+function updateShop(dt, time) {
+  if (!shopState.active) return;
+  shopState.stations.forEach((s, i) => {
+    s.mannequin.position.y = .5 + Math.sin(time * 1.4 + i) * .05;
+    s.mannequin.rotation.y = Math.PI + Math.sin(time * .5 + i) * .25;
+    const wp = s.sign.sign.getWorldPosition(_v3);
+    s.sign.sign.lookAt(camera.position.x, wp.y, camera.position.z);
+  });
+  if (shopState.leave) shopState.leave.pad.rotation.y = Math.sin(time * .6) * .12;
+  // context prompt + USE button for whatever you're standing in front of
+  const s = nearestStation();
+  let leaveNear = false;
+  if (shopState.leave) {
+    const dx = player.x - shopState.leave.group.position.x, dz = player.z - shopState.leave.group.position.z;
+    leaveNear = Math.hypot(dx, dz) < 2.2;
+  }
+  const useButton = document.querySelector('#useButton'), prompt = document.querySelector('#shopPrompt');
+  if (leaveNear) {
+    useButton.hidden = false;
+    prompt.hidden = false;
+    prompt.textContent = '🚪 Leave the shop';
+  } else if (s) {
+    const owned = ownsOutfit(s.outfit.id);
+    const affordable = s.price === 0 || save.coins >= s.price;
+    useButton.hidden = false;
+    prompt.hidden = false;
+    prompt.innerHTML = owned
+      ? `Press <b>E</b> / USE to wear ${s.outfit.emoji} ${s.outfit.name}`
+      : affordable
+        ? `Press <b>E</b> / USE to buy ${s.outfit.emoji} ${s.outfit.name} for <b>${s.price} 🪙</b>`
+        : `${s.outfit.emoji} ${s.outfit.name} — needs <b>${s.price} 🪙</b> (you have ${save.coins})`;
+  } else {
+    useButton.hidden = true; prompt.hidden = true;
+  }
+}
+// pressing E (or the on-screen USE button) interacts with whatever you are standing in front of
+addEventListener('keydown', e => {
+  if (e.code !== 'KeyE' || e.repeat) return;
+  if (overlay.hidden === false) return;
+  shopInteract();
+});
+document.querySelector('#useButton').addEventListener('pointerdown', e => { e.preventDefault(); shopInteract(); });
+
+// ---- teleport menu: home, unlocked levels, and the shop ----
+const menuPanel = document.querySelector('#menu'), menuList = document.querySelector('#menuList');
+function teleportToSpot(spot) {
+  if (!spot) return respawn();
+  Object.assign(player, {
+    x: spot.x, y: spot.y, z: spot.z, vx: 0, vy: 0, vz: 0, prevY: spot.y,
+    ground: false, airPeak: 0, steps: 0, surface: null, standingOn: null, coyote: 0, jumpBuffer: 0,
+  });
+  cameraYaw = 0;
+  sfx.unstick('gel', .5);   // soft little pop on teleport
+}
+let toastTimer = null;
+function showToast(message) {
+  let el = document.querySelector('#toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+function buildMenu() {
+  menuList.textContent = '';
+  const add = (label, swatch, tag, fn, disabled) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    if (swatch) {
+      const dot = document.createElement('span');
+      dot.className = 'swatch';
+      dot.style.background = swatch;
+      b.appendChild(dot);
+    }
+    b.appendChild(document.createTextNode(label));
+    if (tag) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = tag; b.appendChild(t); }
+    b.disabled = !!disabled;
+    b.addEventListener('click', () => { menuPanel.hidden = true; fn(); });
+    menuList.appendChild(b);
+  };
+  const here = shopState.active ? -1 : (currentLevel ? currentLevel.index : 0);
+  add('🏠 Home area', 'linear-gradient(135deg,#ffb3d9,#ffffff)', shopState.active ? 'world' : 'base',
+    () => {
+      if (shopState.active) { leaveShop(); return; }
+      teleportToSpot((currentLevel && currentLevel.def.home) || currentLevel.def.spawn);
+    });
+  window.levels.forEach((lv, i) => {
+    const unlocked = i <= save.maxLevel;
+    const c = `rgb(${lv.color.map(v => Math.round(v * 255)).join(',')})`;
+    add(`${i + 1}. ${lv.name}`, c, unlocked ? (i === here ? 'here' : 'start') : 'locked',
+      () => { if (shopState.active) { shopState.active = false; } if (i === here) teleportToSpot(lv.home || lv.spawn); else buildLevel(i); },
+      !unlocked);
+  });
+  add('🛒 Shop', 'linear-gradient(135deg,#ffd86b,#ff79bd)', shopState.active ? 'here' : 'open',
+    () => { if (!shopState.active) buildShop(); });
+}
+document.querySelector('#menuButton').addEventListener('click', () => {
+  const opening = menuPanel.hidden;
+  wardrobe.hidden = true;
+  menuPanel.hidden = !opening;
+  if (opening) buildMenu();
+});
+
 // ---- HUD ----
 const levelNameEl = document.querySelector('#levelName'), levelDotEl = document.querySelector('#levelChip .dot');
 const coinCountEl = document.querySelector('#coinCount');
 const overlay = document.querySelector('#overlay'), overlayTitle = document.querySelector('#overlayTitle');
 const overlayBody = document.querySelector('#overlayBody'), overlayReward = document.querySelector('#overlayReward');
-function closeOverlay() { overlay.hidden = true; }
+function closeOverlay() { overlay.hidden = true; overlay.classList.remove('celebrate'); }
 document.querySelector('#overlayPlay').addEventListener('click', closeOverlay);
+document.querySelector('#overlayNext').addEventListener('click', () => {
+  closeOverlay();
+  buildLevel(Math.min(currentLevel.index + 1, window.levels.length - 1));
+});
 document.querySelector('#overlayRestart').addEventListener('click', () => { closeOverlay(); buildLevel(currentLevel.index); });
 // clicking the backdrop (but not the card) or pressing Escape also dismisses it
 overlay.addEventListener('pointerdown', e => { if (e.target === overlay) closeOverlay(); });
 addEventListener('keydown', e => { if (e.code === 'Escape') closeOverlay(); });
 function updateHud() {
-  if (currentLevel) {
+  if (shopState.active) {
+    levelNameEl.textContent = '🛒 Outfit Shop';
+    levelDotEl.style.background = 'linear-gradient(135deg,#ffd86b,#ff79bd)';
+  } else if (currentLevel) {
     levelNameEl.textContent = `Level ${currentLevel.index + 1} · ${currentLevel.def.name}`;
     const c = currentLevel.def.color;
     levelDotEl.style.background = `rgb(${c.map(v => Math.round(v * 255)).join(',')})`;
   }
   coinCountEl.textContent = `${save.coins} 🪙`;
 }
-function showComplete(unlocked) {
+function showComplete(payout) {
+  overlay.classList.remove('celebrate');
   overlayTitle.textContent = currentLevel.def.name + ' complete!';
-  overlayBody.textContent = `Coins this run: ${levelCoins} · Total: ${save.coins}`;
-  if (unlocked) {
-    overlayReward.hidden = false;
-    overlayReward.innerHTML = `New outfit unlocked! <span class="emoji">${unlocked.emoji}</span> ${unlocked.name}`;
-    playerCostume = unlocked; playerGender = unlocked.id; buildCharacter();
-  } else {
-    overlayReward.hidden = true;
-    overlayReward.textContent = '';
-  }
+  overlayBody.textContent = `Coins this run: ${levelCoins} · Level reward: +${payout} 🪙 · Total: ${save.coins}`;
+  overlayReward.hidden = true; overlayReward.textContent = '';
+  document.querySelector('#overlayNext').hidden = !(currentLevel.index < window.levels.length - 1);
   overlay.hidden = false;
+}
+// the big win screen after the final level
+function showCongratulations(payout) {
+  overlay.classList.add('celebrate');
+  overlayTitle.textContent = '🏆 Congratulations!';
+  const owned = save.outfits.length + 1;
+  overlayBody.innerHTML = `You finished every level in the rainbow!<br>`
+    + `Final reward: <b>+${payout} 🪙</b><br>`
+    + `Levels beaten: ${window.levels.length} / ${window.levels.length} · Outfits owned: ${owned} / ${allShopOutfits.length}<br>`
+    + `Coins in your purse: <b>${save.coins} 🪙</b>`;
+  overlayReward.hidden = false;
+  overlayReward.innerHTML = 'Thank you for playing Rainbow ASMR Obby!';
+  document.querySelector('#overlayNext').hidden = true;
+  overlay.hidden = false;
+  // little confetti burst
+  for (let i = 0; i < 18; i++) setTimeout(() => sfx.coin(), i * 90);
 }
 
 // ---- squishy + keycap platforms ----
@@ -749,6 +1172,23 @@ function landOn(p, impact, dt) {
   }
   p.wasLanded = true;
 }
+// Final safety net: if the body is ever found embedded inside a slab, push it straight UP out of
+// the surface. Walking onto a squishy can no longer leave you clipped inside it.
+function resolvePenetration() {
+  for (const p of platforms) {
+    const top = platformTop(p), slabBottom = p.y - p.h / 2;
+    const hx = p.hitW / 2 + LAND_PAD, hz = p.hitD / 2 + LAND_PAD;
+    if (player.x < p.x - hx || player.x > p.x + hx || player.z < p.z - hz || player.z > p.z + hz) continue;
+    const feet = player.y - player.half - player.r;
+    const head = player.y + player.half + player.r;
+    if (feet < top - .02 && head > slabBottom && feet > slabBottom - .35) {
+      player.y = top + player.half + player.r;
+      if (player.vy < 0) player.vy = 0;
+      if (!player.ground || player.surface !== p) landOn(p, player.airPeak, 0);
+      else player.surface = p;
+    }
+  }
+}
 // keep the character's feet exactly on the surface it is standing on (no sinking, no hovering)
 function pinFeetToSurface() {
   if (!player.ground || !player.surface) return;
@@ -761,7 +1201,7 @@ function snapDownPlatform(maxDrop) {
   let bestTop = -Infinity, bestP = null;
   for (const p of platforms) {
     const top = platformTop(p);
-    const hx = p.w / 2 + player.r * .5, hz = p.d / 2 + player.r * .5;
+    const hx = p.hitW / 2 + player.r * .5, hz = p.hitD / 2 + player.r * .5;
     if (player.x < p.x - hx || player.x > p.x + hx || player.z < p.z - hz || player.z > p.z + hz) continue;
     const drop = (player.y - player.half - player.r) - top;
     if (drop > 0 && drop <= maxDrop && top > bestTop) { bestTop = top; bestP = p; }
@@ -775,8 +1215,9 @@ function collidePlatforms(dt) {
   for (const p of platforms) {
     const top = platformTop(p);
     const slabBottom = p.y - p.h / 2;
-    // the landing footprint is wider than the side-collision box: forgiving obby edges
-    const fx = p.w / 2 + player.r + EDGE_GRACE, fz = p.d / 2 + player.r + EDGE_GRACE;
+    // A platform's standable area is its rounded TOP FACE, not its bounding box: the corner radius
+    // eats into the edges, so the hitbox shrinks by the same amount or you can stand on thin air.
+    const fx = p.hitW / 2 + LAND_PAD + EDGE_GRACE, fz = p.hitD / 2 + LAND_PAD + EDGE_GRACE;
     if (player.x > p.x - fx && player.x < p.x + fx && player.z > p.z - fz && player.z < p.z + fz) {
       const wasAbove = prevFeet >= top - LAND_BAND;
       const deepInside = feet < top && feet > slabBottom - .5;
@@ -787,8 +1228,8 @@ function collidePlatforms(dt) {
         bonkY = slabBottom;   // head bonk from underneath
       }
     }
-    // side collision only once the body is clearly inside the slab, so grazing an edge never shoves you off
-    const hx = p.w / 2 + player.r, hz = p.d / 2 + player.r;
+    // side collision uses the same rounded footprint
+    const hx = p.hitW / 2 + LAND_PAD, hz = p.hitD / 2 + LAND_PAD;
     if (feet < top - LAND_BAND && player.y + player.half > slabBottom &&
         player.x > p.x - hx && player.x < p.x + hx && player.z > p.z - hz && player.z < p.z + hz) {
       const dx = Math.min(p.x + hx - player.x, player.x - (p.x - hx));
@@ -798,6 +1239,14 @@ function collidePlatforms(dt) {
     }
   }
   if (bonkY > -Infinity) { player.y = bonkY - player.half - player.r; player.vy = Math.min(0, player.vy); }
+  // sticky ground: while still over the platform we were on, stay glued to it while shuffling forward
+  if (!bestP && player.standingOn && player.vy <= 0) {
+    const s = player.standingOn, t = platformTop(s);
+    const hx = s.w / 2 + player.r * .8, hz = s.d / 2 + player.r * .8;
+    const feet = player.y - player.half - player.r;
+    if (player.x > s.x - hx && player.x < s.x + hx && player.z > s.z - hz && player.z < s.z + hz &&
+        feet < t + .08 && feet > t - STICK) bestP = s;
+  }
   // never let a squishy spring up through the player and leave them inside the slab
   if (player.standingOn && player.standingOn.squishy) {
     const sTop = platformTop(player.standingOn);
@@ -861,7 +1310,15 @@ function collideBlocks() {
 function updateBlocks(dt) {
   if (!blocks.length) return;
   world.step(1 / 60, dt, 3);
+  const floor = blocks.floorY;
   for (const b of blocks) {
+    // hard floor: a block can never end a step below the tower deck, whatever the solver does
+    if (floor !== undefined && b.body.position.y < floor + b.s - .05) {
+      b.body.position.y = floor + b.s;
+      if (b.body.velocity.y < 0) b.body.velocity.y = 0;
+      b.body.velocity.x *= .8; b.body.velocity.z *= .8;
+      b.body.angularVelocity.scale(.6, b.body.angularVelocity);
+    }
     b.x = b.body.position.x; b.y = b.body.position.y; b.z = b.body.position.z;
     b.mesh.position.set(b.x, b.y, b.z);
     b.mesh.quaternion.set(b.body.quaternion.x, b.body.quaternion.y, b.body.quaternion.z, b.body.quaternion.w);
@@ -906,16 +1363,18 @@ function completeLevel() {
   levelComplete = true;
   goal.hit = true;
   const def = currentLevel.def;
-  const reward = window.rainbowOutfits.find(o => o.id === def.reward);
-  let unlocked = null;
-  if (reward && addOutfitToWardrobe(reward)) {
-    unlocked = reward;
-    if (save.maxLevel <= currentLevel.index) save.maxLevel = currentLevel.index + 1;
-    writeSave();
-  }
-  syncUnlockedOutfits();
+  const index = currentLevel.index;
+  const isLast = index === window.levels.length - 1;
+  // finishing a level pays out coins and opens the next one
+  const payout = def.rewardCoins || 15;
+  save.coins += payout;
+  if (save.maxLevel <= index) save.maxLevel = Math.min(index + 1, window.levels.length - 1);
+  save.beaten = save.beaten || [];
+  if (!save.beaten.includes(def.id)) save.beaten.push(def.id);
+  writeSave();
   sfx.coin(); setTimeout(() => sfx.coin(), 120); setTimeout(() => sfx.coin(), 240);
-  showComplete(unlocked);
+  if (isLast) showCongratulations(payout);
+  else showComplete(payout, isLast);
 }
 function update(dt) {
   let ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + touch.x;
@@ -953,6 +1412,7 @@ function update(dt) {
     collideBlocks();
     updatePlatforms(h);
     collidePlatforms(h);
+    resolvePenetration();
     player.standingOn = player.surface;
     if (player.ground) player.coyote = COYOTE;
     if (!player.ground) player.airPeak = Math.max(player.airPeak, -player.vy);
@@ -1083,6 +1543,7 @@ function frame(now) {
   const bottom = player.y - player.half - player.r;
   character.position.set(player.x, bottom, player.z);
   animateCharacter(dt, now / 1000);
+  updateShop(dt, now / 1000);
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);

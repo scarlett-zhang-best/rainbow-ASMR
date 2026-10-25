@@ -9,10 +9,22 @@ html, body {
 #game { display: block; width: 100%; height: 100%; }
 
 .top-buttons { position: fixed; top: 18px; right: 18px; z-index: 6; display: flex; gap: 10px; }
-#wardrobeButton, #soundButton { width: 54px; height: 54px; border: 3px solid #fff; border-radius: 16px; color: white; font-size: 1.7rem; cursor: pointer; }
+#wardrobeButton, #soundButton, #menuButton { width: 54px; height: 54px; border: 3px solid #fff; border-radius: 16px; color: white; font-size: 1.7rem; cursor: pointer; }
 #wardrobeButton { background: #643d9ddd; box-shadow: 0 5px 14px #24134c66; }
 #soundButton { background: #2b8f7ddd; box-shadow: 0 5px 14px #12403c66; font-size: 1.6rem; }
+#menuButton { background: #d1489bdd; box-shadow: 0 5px 14px #5c144466; }
 #soundButton[aria-pressed="false"] { background: #6b6b7acc; filter: grayscale(1); }
+.menu[hidden] { display: none; }
+.menu { position: fixed; top: 82px; right: 18px; z-index: 6; width: min(280px, calc(100vw - 36px)); padding: 14px; border: 3px solid #fff; border-radius: 18px; background: #241458f2; color: white; box-shadow: 0 10px 30px #12092e99; }
+.menu-title { margin-bottom: 10px; text-align: center; font-weight: 900; }
+.menu-hint { margin-top: 10px; text-align: center; font-size: .68rem; opacity: .65; }
+.menu-list { display: flex; flex-direction: column; gap: 7px; }
+.menu-list button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px; border: 2px solid #ffffff55; border-radius: 12px; background: #ffffff1a; color: white; font: 800 .9rem system-ui; text-align: left; cursor: pointer; }
+.menu-list button:hover:not(:disabled) { border-color: #ffd86b; background: #ffffff33; }
+.menu-list button:disabled { opacity: .42; cursor: not-allowed; }
+.menu-list button .swatch { width: 15px; height: 15px; flex: 0 0 auto; border-radius: 50%; box-shadow: 0 0 8px #fff6; }
+.menu-list button .tag { margin-left: auto; font-size: .68rem; opacity: .8; }
+
 .wardrobe { position: fixed; top: 82px; right: 18px; left: auto; z-index: 6; width: min(440px, calc(100vw - 36px)); padding: 14px; border: 3px solid #fff; border-radius: 18px; background: #30185fee; color: white; box-shadow: 0 10px 30px #1c103b99; }
 .wardrobe-title { margin-bottom: 8px; text-align: center; font-weight: 900; }
 .wardrobe-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -26,10 +38,18 @@ html, body {
 .costume-list button span { display: block; font-size: .62rem; font-weight: 800; }
 .costume-list button:hover, .costume-list button:focus { border-color: #ffd86b; background: #ffffff40; }
 
-.hud { position: fixed; top: 18px; left: 18px; pointer-events: none; color: white; text-shadow: 0 3px 0 #6c43a3, 0 5px 12px #304d8780; }
-.level-chip { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border: 3px solid #fff; border-radius: 999px; background: #643d9de6; font-weight: 900; font-size: 1rem; letter-spacing: -.01em; }
+.hud { position: fixed; top: 18px; left: 18px; pointer-events: none; color: white; text-shadow: 0 3px 0 #6c43a3, 0 5px 12px #304d8780; }.level-chip { display: inline-flex; align-items: center; gap: 9px; padding: 7px 16px; border: 3px solid #fff; border-radius: 999px; background: #643d9de6; font-weight: 900; font-size: 1rem; letter-spacing: -.01em; }
 .level-chip .dot { width: 15px; height: 15px; border-radius: 50%; background: #ff79bd; box-shadow: 0 0 10px #fff8; }
 .coin-bar { display: inline-flex; align-items: center; gap: 6px; margin-top: 9px; padding: 5px 14px; border: 3px solid #fff; border-radius: 999px; background: #2b8f7de6; font-weight: 900; font-size: .95rem; }
+
+.toast { position: fixed; left: 50%; bottom: 26px; z-index: 9; max-width: min(420px, calc(100vw - 40px)); padding: 12px 18px; border: 3px solid #fff; border-radius: 16px; background: #241458f2; color: #fff; font-weight: 800; text-align: center; box-shadow: 0 10px 26px #12092eaa; transform: translate(-50%, 130%); opacity: 0; pointer-events: none; transition: transform .28s ease, opacity .28s ease; }
+.toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+.shop-prompt { position: fixed; left: 50%; bottom: 74px; z-index: 7; max-width: min(460px, calc(100vw - 40px)); padding: 11px 18px; border: 3px solid #fff; border-radius: 16px; background: #241458f2; color: #fff; font-weight: 900; text-align: center; box-shadow: 0 10px 26px #12092eaa; transform: translateX(-50%); pointer-events: none; }
+.shop-prompt[hidden] { display: none; }
+.use-button { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 7; transform: translateX(-50%); padding: 14px 30px; border: 4px solid #fff; border-radius: 999px; background: #ff79bd; color: #fff; font: 900 1rem system-ui; box-shadow: 0 6px 0 #a92c70, 0 10px 20px #29215e55; cursor: pointer; }
+.use-button[hidden] { display: none; }
+.use-button:active { transform: translateX(-50%) translateY(4px); box-shadow: 0 2px 0 #a92c70; }
 
 .overlay { position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; background: #2a114aaa; backdrop-filter: blur(3px); }
 /* display:grid above would beat the browser's default [hidden] rule, so hide it explicitly */
@@ -42,6 +62,11 @@ html, body {
 .overlay-actions { display: flex; gap: 9px; justify-content: center; }
 .overlay-actions button { border: 3px solid #fff; border-radius: 14px; padding: 9px 16px; background: #ff79bd; color: #fff; font: 900 .95rem system-ui; cursor: pointer; }
 .overlay-actions button + button { background: #7b5bc4; }
+.overlay-actions button[hidden] { display: none; }
+.overlay.celebrate { background: radial-gradient(circle at 50% 30%, #ff9ad5cc, #2a114aee); }
+.overlay.celebrate .overlay-card { background: linear-gradient(160deg, #4a2a8fee, #2a1150f2); border-color: #ffd86b; animation: pop .5s ease; }
+.overlay.celebrate h2 { color: #ffd86b; font-size: 2rem; }
+@keyframes pop { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 .stick, #jump { display: none; position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 2; }
 .stick { left: 26px; width: 112px; height: 112px; border: 4px solid #fff9; border-radius: 50%; background: #40277a44; box-shadow: 0 6px 20px #29215e55; }

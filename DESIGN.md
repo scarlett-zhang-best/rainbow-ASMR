@@ -14,9 +14,43 @@ Status: **Level 1 (Pink Prelude) implemented.** Levels 2-12, shop, and powerups 
 - Stepping on one: squish sound + progressive sink (deeper the longer you stand), a quiet sticky
   "kneading" layer every ~0.3 s, and a sticky release pop when you step off.
 - Keycap platforms are rigid and click instead.
-- Coins (one per platform), spinning goal pad, level-complete overlay that unlocks the level outfit.
+- Coins (one large coin per squishy), spinning goal pad, level-complete overlay that pays coins.
 - Bonus playground after the goal: a bridge to the old Cannon.js rainbow block tower to smash.
 - `localStorage` save: coins, unlocked levels, unlocked outfits (restored into the wardrobe on load).
+
+### Level layout shape (all levels follow this)
+1. **Big launch platform** at the bottom — also the level's **home area** (`def.home`), where the
+   teleport menu sends you.
+2. **Staircase into the sky** — squishies and keycaps alternating, each step ~0.8 higher and ~3.2
+   apart, so the level climbs rather than runs flat.
+3. **Starter test platform** — a wide deck at the top holding the rainbow block tower and the goal
+   pad. Reaching it completes the level.
+
+### Teleport menu (🗺️, top-right next to the wardrobe)
+- **🏠 Home area** — drops you on the big launch platform of the current level.
+- **Every unlocked level** — teleports to that level's start (rebuilds the level). Locked levels are
+  shown greyed out; a level unlocks when you finish the one before it (`save.maxLevel`).
+- **🛒 Shop** — placeholder that toasts "coming next"; the real shop is the next build step.
+- The menu and the wardrobe are mutually exclusive, and each hides the other when opened.
+
+### Hitbox accuracy
+- Platform collision uses `hitW`/`hitD` = the platform size **minus twice its corner radius**, i.e.
+  the visible flat top face, plus a small `LAND_PAD` (0.32) for the body's centre. Because the meshes
+  are rounded, a full bounding-box hitbox let you stand on air past the edge.
+- Coins are placed relative to `platformTop()`, so they hover at the real walking height.
+- **Nothing has a sharp edge.** Every platform is built with a custom `roundedBox(w, h, d, r)`
+  generator (subdivided cube projected onto a rounded-box SDF, with true smooth normals), so
+  keycaps, squishies, the goal pad and the tower deck all have soft round corners.
+- **Translucent + reflective.** Platforms use `MeshPhysicalMaterial` with slight transparency
+  (opacity 0.85–0.95) and a clearcoat highlight; gel/gummy get full clearcoat, dough stays matte.
+- **Environment map.** A tiny painted equirect gradient is run through `PMREMGenerator` and set as
+  `scene.environment`, so every squishy surface picks up real reflections and specular highlights.
+- **Clouds are white and out of the way.** Cloud material is white with a low emissive
+  (`emissiveIntensity .3`, opacity .5) so the hemisphere light can never grey them out, and they are
+  placed well below and to the sides of the course (y −16…−4, 16–50 units off-axis) so they never
+  block the camera's view of the platforms. The hemisphere light itself is now white-over-lilac.
+- The visible surface and the collision surface stay the same number (`topExtra`), so rounding the
+  geometry never puts a platform edge above the line your feet stand on.
 
 ### Collision system (rewritten after fall-through complaints)
 - Movement is integrated in **4 substeps per frame**, so a fast fall can never skip over a slab.
@@ -31,8 +65,32 @@ Status: **Level 1 (Pink Prelude) implemented.** Levels 2-12, shop, and powerups 
 - **Snap-down** (0.5) when walking toward a slightly lower platform.
 - **Coyote time** (0.11 s) and **jump buffering** (0.13 s) for responsive jumping.
 - Tuning constants live together at the top of `script.js`: `GRAVITY, JUMP_POWER, COYOTE,
-  JUMP_BUFFER, EDGE_GRACE, SNAP_DROP, DEATH_Y`.
+  JUMP_BUFFER, EDGE_GRACE, SNAP_DROP, LAND_GRACE, LAND_BAND, STICK, DEATH_Y`.
+- **LAND_BAND** is deliberately small (0.25): a small "step height" means you rarely have to jump
+  *up into* a platform edge, which is what caused clipping between squishies.
+- **Sticky ground** (STICK 0.3): while still over the platform you were standing on, your feet stay
+  glued to it as you shuffle forward, so stepping onto a neighbouring squishy can't drop you.
+- **Depenetration pass** (`resolvePenetration`, runs every substep): if the body is ever found
+  embedded inside a slab it is pushed straight up out of the surface — never sideways, never through.
+- **Feet pinning** (`pinFeetToSurface`): feet are clamped to the exact top of the current surface
+  every frame, so no sinking while standing and no hovering.
 
+### Bonus playground (end of Pink Prelude)
+The level now ends at the **rainbow block tower** rather than a "bonus" side area.
+- The tower deck is a **rigid `solid` platform** (white slab, pink stripes) — deliberately *not* a
+  squishy, so the Cannon.js boxes have a permanent floor.
+- Anti-tunnelling for boxes: the static cannon base is 6 units thick, contacts are stiffer
+  (`contactEquationStiffness 1e8`), damping raised, and `updateBlocks()` clamps any block that ends
+  a step below the deck back onto it with its downward velocity zeroed.
+- Low walls keep smashed blocks on the deck.
+
+## Look & feel (brightness fix)
+- **Linear vs sRGB**: Three.js r128 treats material colours as *linear*-light, so pastel values like
+  `[1, .87, .93]` rendered washed out / near-white. All platform + character materials now run through
+  `convertSRGBToLinear()` via the shared `srgb()` helper, so the rainbow reads rich instead of hot.
+- **Tuned lights**: hemisphere 0.8, sun 1.05 (was 0.95 / 1.4) — stops the day-sunny wash-out.
+- **Darker theme tints**: marshmallow squishy was near-white `[1, .87, .93]` (invisible on bright sky);
+  now pinkish `[.98, .62, .72]`. All keycaps/skins slightly deepened; skies and deck tints softened.
 
 ## Reference
 **Rainbow Obby** (emolingo games) — https://poki.com/en/g/rainbow-obby — the benchmark for this
@@ -69,17 +127,30 @@ Each rainbow color appears exactly once, in rainbow order. Resolved: no pink rep
 - **Keycap platforms** — hard plastic click; land = click sound, step = tick, small bounce.
   (Consistent with the rainbow ASMR theme: the original project is literally called
   "Super Rainbow **Money** Adventure" → money/keycap aesthetic.)
-- **Coins** — one collectible currency, dropped along each level's path, magnet/radius pickup.
+- **Coins** — exactly **one large coin per squishy**, floating 1.35 above its walking surface
+  (radius 0.48, spinning). Coins are the shop currency.
 - **Outfit unlock** — finishing a level unlocks exactly one new outfit, added to the wardrobe.
 - **Death** — falling respawns at the level start (or last checkpoint); costs no coins.
 
-## Shop
-- Reachable by **teleport** from anywhere (dedicated key / HUD button), no walking back.
-- Buys: outfits (cosmetics) and powerups.
-- Powerups to design:
-  - **Rainbow carpet** — fly/glide (hold jump to rise, glide down).
-  - **Level skip** — teleport straight to the next level (single use or consumable).
-  - (open) extra jumps, coin magnet, slow-fall.
+## Shop (built)
+- Reachable from the teleport menu (🛒) — a purple room with a row of **glass display tubes**, each
+  holding a **mannequin wearing the outfit** (built with the same rig as the player, so the tube
+  shows exactly what you get).
+- **Stand on the pad in front of a tube** and press **E** (or the on-screen **USE** button).
+  - Not owned → buys it for the price (pad glows gold when affordable, grey when not)
+  - Owned → wears it (pad glows green)
+- Prices are **strictly increasing**: `price(i) = round(5 × 1.3^(i-1))`, so 5, 7, 8, 11, 14, 19 …
+- The **starter outfit (Lavender) is free and owned from the start**; every other outfit must be
+  bought. 20 outfits total (4 girl + 4 boy + 12 rainbow).
+- Signs above each tube are canvas textures that re-draw when you buy something.
+- 🚪 Leave pad by the entrance returns you to the world.
+
+## Progression changes
+- Finishing a level now pays **coins** (`rewardCoins`, 15 → 78) and unlocks the next level.
+- Outfits are **no longer granted free by level completion** — they are bought in the shop, per the
+  latest instruction. If you want level rewards to hand out an outfit again, that is a small change.
+- Completing the **final level (Snowfall)** shows a golden **congratulations screen** with levels
+  beaten, outfits owned and total coins, plus a burst of coin chimes.
 
 ## Progression / saving
 - localStorage: unlocked levels, owned outfits, equipped outfit, coin balance, owned powerups,
