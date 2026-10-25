@@ -493,9 +493,10 @@ function makePlatform(def) {
   } else {
     const kd = window.squishyKinds[kind] || window.squishyKinds.gel;
     p.squishy = true; p.sinkMax = kd.sink; p.k = kd.k; p.damp = kd.damp; p.sound = kd.sound; p.label = kd.label;
-    const gelMat = squishMaterial(kd.color, {
+    const col = def.c || kd.color;   // per-level colour override (falls back to the squishy kind)
+    const gelMat = squishMaterial(col, {
       roughness: kd.rough, opacity: kd.opacity, clearcoat: kd.rough < .5 ? 1 : .35,
-      emissive: kd.glow ? kd.color : [0, 0, 0], emissiveIntensity: kd.glow,
+      emissive: kd.glow ? col : [0, 0, 0], emissiveIntensity: kd.glow,
     });
     const slabR = Math.min(p.h * .5, .3);
     setCorner(slabR);
@@ -514,7 +515,7 @@ function makePlatform(def) {
     if (kind === 'gel' || kind === 'gummy') {  // glossy bubbles
       for (let i = 0; i < 3; i++) {
         const bubble = new THREE.Mesh(cloudGeo, new THREE.MeshPhysicalMaterial({
-          color: srgb(kd.color).lerp(srgb([1, 1, 1]), .5),
+          color: srgb(col).lerp(srgb([1, 1, 1]), .5),
           roughness: .04, clearcoat: 1, transparent: true, opacity: .55, envMapIntensity: 1.4 }));
         const a = i * 2.1, r = p.w * .26;
         bubble.scale.setScalar(i === 1 ? .17 : .1);
@@ -531,7 +532,7 @@ function makePlatform(def) {
       }
     }    if (kind === 'knead') {  // finger dents pressed into the dough
       for (let i = 0; i < 4; i++) {
-        const dent = new THREE.Mesh(cloudGeo, squishMaterial(srgb(kd.color).multiplyScalar(.92).toArray(), { roughness: 1, opacity: .9, clearcoat: .1 }));
+        const dent = new THREE.Mesh(cloudGeo, squishMaterial(srgb(col).multiplyScalar(.92).toArray(), { roughness: 1, opacity: .9, clearcoat: .1 }));
         dent.scale.setScalar(.11);
         dent.position.set((Math.random() - .5) * p.w * .6, p.h * .5 - .01, (Math.random() - .5) * p.d * .6);
         g.add(dent);
@@ -771,7 +772,7 @@ soundButton.addEventListener('click', () => {
   soundButton.textContent = on ? '🔊' : '🔇';
   sfx.setEnabled(on);
 });
-const allCostumes = [...window.costumes.girl, ...window.costumes.boy];
+const allCostumes = [...window.costumes.girl.map(o => ({ ...o, gender: 'girl' })), ...window.costumes.boy.map(o => ({ ...o, gender: 'boy' }))];
 const costumeList = document.querySelector('#costumeList'), girlMode = document.querySelector('#girlMode'), boyMode = document.querySelector('#boyMode');
 function setGender(gender) { playerGender = gender; girlMode.classList.toggle('active', gender === 'girl'); boyMode.classList.toggle('active', gender === 'boy'); buildCharacter(); }
 girlMode.addEventListener('click', () => setGender('girl'));
@@ -781,7 +782,7 @@ allCostumes.forEach(costume => {
   const button = document.createElement('button');
   button.type = 'button'; button.title = costume.name;
   button.innerHTML = `${costume.emoji}<span>${costume.name}</span>`;
-  button.addEventListener('click', () => { playerCostume = costume; buildCharacter(); wardrobe.hidden = true; });
+  button.addEventListener('click', () => { playerCostume = costume; playerGender = costume.gender; buildCharacter(); wardrobe.hidden = true; });
   costumeList.appendChild(button);
 });
 
@@ -827,7 +828,7 @@ function stationSign(outfit, price) {
   const geo = new THREE.PlaneGeometry(2.4, 1.2);
   geo.userData.perLevel = true;
   const sign = new THREE.Mesh(geo, mat);
-  sign.position.set(0, 3.1, .42);
+  sign.position.set(0, 4.3, 0);   // above the tube, facing the shopper
   return { sign, tex, ctx, canvas };
 }
 function refreshStationSigns() {
@@ -863,7 +864,7 @@ function buildShop() {
   scene.fog.near = 26; scene.fog.far = 70;
   // room: floor, walls and a ceiling so the shop feels enclosed
   platforms.push(makePlatform({ t: 'solid', x: 0, y: -.5, z: 0, w: 26, h: 1, d: 40, c: [.42, .3, .62] }));
-  platforms.push(makePlatform({ t: 'solid', x: 0, y: 5.5, z: 0, w: 26, h: .8, d: 40, c: [.3, .2, .48] }));
+  platforms.push(makePlatform({ t: 'solid', x: 0, y: 6.9, z: 0, w: 26, h: 1.2, d: 40, c: [.3, .2, .48] }));
   for (const w of [
     { x: -13, z: 0, w: 1, d: 40 }, { x: 13, z: 0, w: 1, d: 40 },
     { x: 0, z: -20, w: 26, d: 1 }, { x: 0, z: 19, w: 26, d: 1 },
@@ -897,7 +898,7 @@ function buildShop() {
     man.position.y = .5;
     g.add(man);
     constructRig(man, outfit, outfit.gender);
-    man.rotation.y = Math.PI;   // face the shopper
+    man.rotation.y = 0;   // face the player/shopper standing in front of the pad
     // the purchase pad in front of the tube
     const padGeo = roundedBox(1.5, .12, 1.5, .05);
     const pad = new THREE.Mesh(padGeo, squishMaterial([1, .86, .3], { roughness: .3, opacity: .95, clearcoat: .8, emissive: [.4, .3, 0], emissiveIntensity: .8 }));
@@ -974,7 +975,7 @@ function updateShop(dt, time) {
   if (!shopState.active) return;
   shopState.stations.forEach((s, i) => {
     s.mannequin.position.y = .5 + Math.sin(time * 1.4 + i) * .05;
-    s.mannequin.rotation.y = Math.PI + Math.sin(time * .5 + i) * .25;
+    s.mannequin.rotation.y = Math.atan2(player.x - s.group.position.x, player.z - (s.group.position.z + 2.1));
     const wp = s.sign.sign.getWorldPosition(_v3);
     s.sign.sign.lookAt(camera.position.x, wp.y, camera.position.z);
   });
@@ -1056,11 +1057,8 @@ function buildMenu() {
     menuList.appendChild(b);
   };
   const here = shopState.active ? -1 : (currentLevel ? currentLevel.index : 0);
-  add('🏠 Home area', 'linear-gradient(135deg,#ffb3d9,#ffffff)', shopState.active ? 'world' : 'base',
-    () => {
-      if (shopState.active) { leaveShop(); return; }
-      teleportToSpot((currentLevel && currentLevel.def.home) || currentLevel.def.spawn);
-    });
+  add('🛒 Shop', 'linear-gradient(135deg,#ffd86b,#ff79bd)', shopState.active ? 'here' : 'open',
+    () => { if (!shopState.active) buildShop(); });
   window.levels.forEach((lv, i) => {
     const unlocked = i <= save.maxLevel;
     const c = `rgb(${lv.color.map(v => Math.round(v * 255)).join(',')})`;
@@ -1068,8 +1066,6 @@ function buildMenu() {
       () => { if (shopState.active) { shopState.active = false; } if (i === here) teleportToSpot(lv.home || lv.spawn); else buildLevel(i); },
       !unlocked);
   });
-  add('🛒 Shop', 'linear-gradient(135deg,#ffd86b,#ff79bd)', shopState.active ? 'here' : 'open',
-    () => { if (!shopState.active) buildShop(); });
 }
 document.querySelector('#menuButton').addEventListener('click', () => {
   const opening = menuPanel.hidden;

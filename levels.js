@@ -65,16 +65,16 @@ function generateLevel(i) {
     const z = -7.6 - s * spacing;
     const isSquishy = s % 3 !== 1;
     if (isSquishy) {
-      platforms.push({ t: SQUISHY_ROTATION[(s + i) % 4], x, y, z, w: 3.2, h: .7, d: 3 });
+      platforms.push({ t: SQUISHY_ROTATION[(s + i) % 4], x, y, z, w: 4, h: .7, d: 3.6, c: th.color });
     } else {
-      platforms.push({ t: 'keycap', x, y, z, w: 3, h: .7, d: 3, c: th.keycap });
+      platforms.push({ t: 'keycap', x, y, z, w: 3.4, h: .7, d: 3.4, c: th.keycap });
     }
   }
   // test deck + goal
   const deckY = 1.2 + steps * rise + .35;
-  const deckZ = zEnd - 7.5;
+  const deckZ = zEnd - 9.5;   // deck sits a comfortable gap past the final approach squishy
   platforms.push({ t: 'solid', x: 0, y: deckY, z: deckZ, w: 14, h: 1.4, d: 10, c: th.deck });
-  platforms.push({ t: 'goal', x: -4.6, y: deckY + .3, z: deckZ + 3, w: 4, h: .8, d: 4 });
+  platforms.push({ t: 'goal', x: -4.6, y: deckY + .3, z: deckZ + 2, w: 4, h: .8, d: 4 });
   return {
     id: THEME_IDS[i], name: th.name, color: th.color, sky: th.sky,
     rewardCoins: 12 + i * 6,
@@ -96,17 +96,17 @@ window.levels[0] = {
     // big launch pad / home area, stretching under the whole level
     { t: 'solid',  x: 0,    y: 0,    z: -16,   w: 20, h: 1.4, d: 56, c: THEMES[0].deck },
     // the staircase into the sky
-    { t: 'gel',    x: 0,    y: 1.2,  z: -7.6,  w: 3.2, h: .7, d: 3 },
-    { t: 'keycap', x: -1.6, y: 2.0,  z: -10.8, w: 3,   h: .7, d: 3, c: [1, .46, .7] },
-    { t: 'knead',  x: 1.6,  y: 2.8,  z: -14,   w: 3.2, h: .7, d: 3.2 },
-    { t: 'marsh',  x: -1.6, y: 3.6,  z: -17.2, w: 3,   h: .8, d: 3 },
-    { t: 'gummy',  x: 1.6,  y: 4.4,  z: -20.4, w: 3,   h: .7, d: 3 },
-    { t: 'keycap', x: -1.6, y: 5.2,  z: -23.6, w: 3,   h: .7, d: 3, c: [1, .38, .62] },
-    { t: 'knead',  x: 1.6,  y: 6.0,  z: -26.8, w: 3.2, h: .7, d: 3.2 },
-    { t: 'gel',    x: -1.6, y: 6.8,  z: -30,   w: 3.2, h: .7, d: 3 },
+    { t: 'gel',    x: 0,    y: 1.2,  z: -7.6,  w: 4,   h: .7, d: 3.6 },
+    { t: 'keycap', x: -1.6, y: 2.0,  z: -10.8, w: 3.4, h: .7, d: 3.4, c: [1, .46, .7] },
+    { t: 'knead',  x: 1.6,  y: 2.8,  z: -14,   w: 4,   h: .7, d: 3.8 },
+    { t: 'marsh',  x: -1.6, y: 3.6,  z: -17.2, w: 3.6, h: .8, d: 3.6 },
+    { t: 'gummy',  x: 1.6,  y: 4.4,  z: -20.4, w: 4,   h: .7, d: 3.8 },
+    { t: 'keycap', x: -1.6, y: 5.2,  z: -23.6, w: 3.4, h: .7, d: 3.4, c: [1, .38, .62] },
+    { t: 'knead',  x: 1.6,  y: 6.0,  z: -26.8, w: 4,   h: .7, d: 3.8 },
+    { t: 'gel',    x: -1.6, y: 6.8,  z: -30,   w: 4,   h: .7, d: 3.6 },
     // wide solid starter-test deck holding the whole rainbow block tower
     { t: 'solid',  x: 0,    y: 8.25, z: -38,   w: 16, h: 1.4, d: 11, c: THEMES[0].deck },
-    { t: 'goal',   x: -5.4, y: 8.65, z: -34.5, w: 4,   h: .8, d: 4 },
+    { t: 'goal',   x: -5.4, y: 8.65, z: -34.5, w: 5,   h: .8, d: 5 },
   ],
   tower: { x: 0, y: 8.95, z: -39.5, w: 11, d: 6 },
 };
