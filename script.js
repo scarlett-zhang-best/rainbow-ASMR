@@ -1474,13 +1474,30 @@ function update(dt) {
     player.vz = (player.vz + iz * accel * h) * drag;
     if (player.jumpBuffer > 0 && (player.ground || player.fly || player.coyote > 0)) {
       player.jumpBuffer = 0; player.coyote = 0;
-      player.vy = player.fly ? -JUMP_POWER * 1.25 : JUMP_POWER; player.ground = false; player.airPeak = 0; player.surface = null;
+      if (player.fly) {
+        player.vy = JUMP_POWER * 1.4;
+      } else {
+        player.vy = JUMP_POWER;
+      }
+      player.ground = false; player.airPeak = 0; player.surface = null;
       if (player.standingOn && player.standingOn.squishy) releaseSquishy(player.standingOn);
       anim.stretch = Math.max(anim.stretch, .35); anim.stretchVel += 1.6;
       sfx.jump();
     }
     player.coyote = Math.max(0, player.coyote - h);
-    player.vy -= GRAVITY * h;
+    if (player.fly) {
+      // fly mode - weak gravity so it falls when not thrusting
+      player.vy -= GRAVITY * 0.15 * h;
+      if (keys.Space || jumpQueued) {
+        player.vy += JUMP_POWER * 0.9 * h * 60;
+      }
+      // allow descending faster with down/S
+      if (keys.KeyS || keys.ArrowDown) player.vy -= JUMP_POWER * 0.6 * h * 60;
+      player.vy = Math.max(-JUMP_POWER * 1.5, Math.min(JUMP_POWER * 2, player.vy));
+      player.vy *= Math.exp(-1.2 * h);
+    } else {
+      player.vy -= GRAVITY * h;
+    }
     player.prevY = player.y;
     player.y += player.vy * h;
     player.x += player.vx * h; player.z += player.vz * h;
